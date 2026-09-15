@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { supabase, isAdmin, ADMIN_EMAIL } from './supabase.js';
+import { useEffect, useRef, useState } from 'react';
+import { supabase, isAdmin } from './supabase.js';
 
 const THEMES = [
   { id: 'green', label: 'Verde', bg: '#00a884' },
@@ -16,6 +16,32 @@ const fmtTime = (t) => {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 };
 
+const hashHue = (s) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+};
+
+function Avatar({ name, size = 38 }) {
+  const hue = hashHue(name || '?');
+  return (
+    <div className="avatar" style={{
+      width: size, height: size, fontSize: size * 0.42,
+      background: `linear-gradient(135deg, hsl(${hue},70%,45%), hsl(${(hue + 40) % 360},70%,35%))`,
+    }}>
+      {(name || '?')[0].toUpperCase()}
+    </div>
+  );
+}
+
+function toast(msg, isErr = false) {
+  const el = document.createElement('div');
+  el.textContent = msg;
+  el.style.cssText = `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:${isErr ? '#e73c3c' : 'var(--panel2)'};color:#fff;padding:12px 20px;border-radius:12px;z-index:400;font-size:14px;font-weight:600;box-shadow:0 6px 24px rgba(0,0,0,.45)`;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2600);
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -29,20 +55,19 @@ export default function App() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       setLoading(false);
+      if (!s) setProfile(null);
     });
     return () => sub?.unsubscribe();
   }, []);
 
-  if (loading) return <div className="auth"><Loading /></div>;
+  if (loading) return <div className="boot"><span className="spin" />Carregando…</div>;
   if (!session) return <AuthScreen />;
-  return <Main user={session.user} profile={profile} setProfile={setProfile} />;
+  return <Main key={session.user.id} user={session.user} profile={profile} setProfile={setProfile} />;
 }
-
-function Loading() { return <div className="auth-card sub">Carregando…</div>; }
 
 /* ============ AUTH ============ */
 function AuthScreen() {
-  const [mode, setMode] = useState('login'); // login | register
+  const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [name, setName] = useState('');
@@ -51,18 +76,15 @@ function AuthScreen() {
 
   const doEmail = async (e) => {
     e.preventDefault();
-    setErr('');
-    setBusy(true);
+    setErr(''); setBusy(true);
     try {
       if (mode === 'register') {
         const { data, error } = await supabase.auth.signUp({
           email, password: pass,
-          options: { data: { display_name: name || email.split('@')[0] } },
+          options: { data: { display_name: name.trim() || email.split('@')[0] } },
         });
         if (error) throw error;
-        if (!data.session) {
-          setErr('Conta criada! Confira o link de confirmação no seu email para entrar. ✉️');
-        }
+        if (!data.session) setErr('Conta criada! Confira o link de confirmação no seu email para entrar. ✉️');
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (error) throw error;
@@ -83,9 +105,11 @@ function AuthScreen() {
 
   return (
     <div className="auth">
+      <div className="auth-glow" />
       <form className="auth-card" onSubmit={doEmail}>
-        <h1>💬 GrupoWhat</h1>
-        <div className="sub">Entre para conversar nos grupos</div>
+        <div className="auth-logo">💬</div>
+        <h1>GrupoWhat</h1>
+        <div className="sub">Seus grupos, do seu jeito</div>
         <button type="button" className="btn google" onClick={doGoogle}>
           <GLogo /> Continuar com Google
         </button>
@@ -94,28 +118,19 @@ function AuthScreen() {
           <input className="input" placeholder="Seu nome (escolha à vontade)"
             value={name} onChange={(e) => setName(e.target.value)} />
         )}
-        <input className="input" type="email" placeholder="Seu email"
-          value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <input className="input" type="password" placeholder="Sua senha"
-          value={pass} onChange={(e) => setPass(e.target.value)} required minLength={6} />
-        {mode === 'register' && (
-          <div className="sub" style={{ marginBottom: 8 }}>
-            Senha de acesso do GrupoWhat (não é a senha do Gmail).
-          </div>
-        )}
+        <input className="input" type="email" placeholder="Seu email" value={email}
+          onChange={(e) => setEmail(e.target.value)} required />
+        <input className="input" type="password" placeholder="Sua senha" value={pass}
+          onChange={(e) => setPass(e.target.value)} required minLength={6} />
+        {mode === 'register' && <div className="hint">Senha de acesso do GrupoWhat (não é a senha do Gmail).</div>}
         <div className="err">{err}</div>
         <button type="submit" className="btn" disabled={busy}>
           {busy ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
         </button>
         <button type="button" className="btn ghost" style={{ marginTop: 10 }}
           onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr(''); }}>
-          {mode === 'login' ? 'Criar conta com Google' : 'Já tenho conta — entrar'}
+          {mode === 'login' ? 'Criar conta com email' : 'Já tenho conta — entrar'}
         </button>
-        <div className="sub" style={{ marginTop: 10 }}>
-          {mode === 'login'
-            ? 'Sem conta? Toque em “Criar conta com Google” acima.'
-            : 'Criando conta com Google? Use o botão verde acima.'}
-        </div>
       </form>
     </div>
   );
@@ -123,19 +138,17 @@ function AuthScreen() {
 
 const cleanErr = (m) =>
   (m || '').includes('Invalid login') ? 'Email ou senha incorretos.'
-  : (m || '').includes('already') ? 'Este email já está cadastrado. Faça login.'
+  : (m || '').includes('already') ? 'Este email já esta cadastrado. Faça login.'
   : (m || '').replace(/^.*?\b(?:API|error)\b\s*:\s*/i, '');
 
-function GLogo() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 48 48">
-      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-    </svg>
-  );
-}
+const GLogo = () => (
+  <svg width="18" height="18" viewBox="0 0 48 48">
+    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+  </svg>
+);
 
 /* ============ MAIN ============ */
 function Main({ user, profile, setProfile }) {
@@ -146,26 +159,24 @@ function Main({ user, profile, setProfile }) {
   const [showJoin, setShowJoin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
-  const [mobileView, setMobileView] = useState('list'); // list | chat
+  const [mobileView, setMobileView] = useState('list');
 
   useEffect(() => {
-    // carrega nome de exibição
     const dn = user.user_metadata?.display_name;
     if (dn && !profile) setProfile(dn);
     loadGroups();
   }, []);
 
   const loadGroups = async () => {
-    const { data: rows } = await supabase
+    const { data: rows, error } = await supabase
       .from('group_members')
       .select('group_id, groups!group_id(name, id, code, owner_id, locked)');
-    // fallback robusto para diferentes formatos de aninhamento
+    if (error) { console.error(error); toast('Erro ao carregar grupos', true); return; }
     const list = [];
     (rows || []).forEach((r) => {
       const g = r.groups || r.group || r;
       if (g && g.id) list.push(g);
     });
-    // ordena por nome
     list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     setGroups(list);
   };
@@ -174,35 +185,32 @@ function Main({ user, profile, setProfile }) {
     const num = parseInt(code, 10);
     if (!Number.isInteger(num)) return { err: 'Número inválido.' };
     const { data: gid, error } = await supabase.rpc('join_by_code', { p_code: num });
-    if (error) return { err: 'Erro. Confira o número.' };
+    if (error) return { err: 'Erro. Confira o número e tente de novo.' };
     if (!gid) return { err: 'Grupo não encontrado. Confira o número?' };
-    await reload();
+    toast('Você entrou no grupo! 🎉');
+    await loadGroups();
     return {};
   };
 
   const createGroupFn = async (name) => {
-    const code = 1000 + Math.floor(Math.random() * 9000); // 4 dígitos
+    const code = 1000 + Math.floor(Math.random() * 9000);
     const { data: g, error } = await supabase
       .from('groups').insert({ name, code, owner_id: user.id })
       .select().single();
-    if (error) return { err: error.message };
-    await supabase.rpc('join_by_code', { p_code: code }); // entra o criador
-    await reload();
-    return {};
+    if (error) { console.error(error); return { err: 'Falha ao criar. Tente de novo.' }; }
+    await supabase.rpc('join_by_code', { p_code: code });
+    await loadGroups();
+    return { ok: true, group: g };
   };
-
-  const reload = async () => { await loadGroups(); };
 
   const leaveOrDelete = async (gid) => {
     await supabase.from('group_members').delete().eq('group_id', gid).eq('user_id', user.id);
-    if (admin) {
-      const g = groups.find((x) => x.id === gid);
-      if (g?.owner_id === user.id) {
-        await supabase.from('messages').delete().eq('group_id', gid);
-        await supabase.from('groups').delete().eq('id', gid);
-      }
+    const g = groups.find((x) => x.id === gid);
+    if (admin && g?.owner_id === user.id) {
+      await supabase.from('messages').delete().eq('group_id', gid);
+      await supabase.from('groups').delete().eq('id', gid);
     }
-    await reload();
+    await loadGroups();
     if (active?.id === gid) { setActive(null); setMobileView('list'); }
   };
 
@@ -210,16 +218,17 @@ function Main({ user, profile, setProfile }) {
     <div className="app">
       <div className={`layout ${mobileView === 'chat' ? 'mobile-chat' : 'mobile-list'}`}>
         <Sidebar
-          groups={groups} active={active} setActive={(g) => { setActive(g); setMobileView('chat'); }}
-          admin={admin} user={user}
+          groups={groups} active={active}
+          setActive={(g) => { setActive(g); setMobileView('chat'); }}
+          admin={admin} user={user} profile={profile}
           onNew={() => setShowCreate(true)}
           onJoin={() => setShowJoin(true)}
           onSettings={() => setShowSettings(true)}
         />
         <div className="chat-main">
           {active
-            ? <ChatView key={active.id} group={active} user={user} admin={admin}
-                onBack={admin ? undefined : () => setMobileView('list')}
+            ? <ChatView key={active.id} group={active} user={user} admin={admin} profile={profile}
+                onBack={() => setMobileView('list')}
                 onMembers={() => setShowMembers(true)}
                 onLeft={async () => { await leaveOrDelete(active.id); }} />
             : <EmptyChat />}
@@ -231,55 +240,61 @@ function Main({ user, profile, setProfile }) {
       {showSettings && <SettingsModal user={user} profile={profile} setProfile={setProfile}
         onClose={() => setShowSettings(false)} />}
       {showMembers && active &&
-        <MembersModal group={active} user={user} admin={admin} onClose={() => setShowMembers(false)}
-          onChanged={reload} />}
+        <MembersModal group={active} user={user} admin={admin} onClose={() => setShowMembers(false)} onChanged={loadGroups} />}
     </div>
   );
 }
 
 function EmptyChat() {
-  return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>
-    Selecione um grupo para começar
-  </div>;
+  return (
+    <div className="empty">
+      <div className="empty-icon">💬</div>
+      <h2>GrupoWhat</h2>
+      <p>Escolha um grupo na lista ao lado<br />ou entre num grupo pelo número.</p>
+    </div>
+  );
 }
 
 /* ============ SIDEBAR ============ */
-function Sidebar({ groups, active, setActive, admin, user, onNew, onJoin, onSettings }) {
+function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoin, onSettings }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const initial = (user.email || '?')[0].toUpperCase();
   return (
     <div className="sidebar">
       <header>
         <div className="logo">💬 GrupoWhat</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'relative' }}>
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{admin ? '👑' : ''}</span>
-          <div className="avatar" onClick={() => setMenuOpen((v) => !v)}>{initial}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+          {admin && <span className="crown">👑</span>}
+          <div className="avatar-wrap" onClick={() => setMenuOpen((v) => !v)}>
+            <Avatar name={profile || user.email} size={36} />
+          </div>
           {menuOpen && (
-            <div style={{ position: 'absolute', top: 42, right: 0, background: 'var(--panel)',
-              border: '1px solid var(--border)', borderRadius: 8, padding: 6, minWidth: 180, zIndex: 50 }}>
-              <div style={{ padding: '8px 10px', fontSize: 13, color: 'var(--muted)' }}>{user.email}</div>
-              <button className="btn ghost" style={{ margin: 4, width: 'calc(100% - 8px)' }}
-                onClick={() => { setMenuOpen(false); onSettings(); }}>⚙️ Aparência</button>
-              <button className="btn ghost" style={{ margin: 4, width: 'calc(100% - 8px)' }}
-                onClick={async () => { setMenuOpen(false); await supabase.auth.signOut(); }}>🚪 Sair</button>
+            <div className="menu-pop">
+              <div className="menu-email">{user.email}</div>
+              <div className="menu-name">{(profile || 'Você') + (admin ? ' · 👑 Admin' : '')}</div>
+              <button className="btn ghost" onClick={() => { setMenuOpen(false); onSettings(); }}>⚙️ Aparência</button>
+              <button className="btn ghost" onClick={async () => { setMenuOpen(false); await supabase.auth.signOut(); }}>🚪 Sair</button>
             </div>
           )}
         </div>
       </header>
-      <div style={{ padding: '8px 14px', display: 'flex', gap: 8 }}>
-        <button className="btn" onClick={onJoin}>🔢 Entrar com nº do grupo</button>
-        <button className="btn ghost" onClick={onNew}>➕ Novo</button>
+      <div className="side-actions">
+        <button className="btn" onClick={onJoin}>🔢 Entrar com nº</button>
+        <button className="btn ghost" onClick={onNew}>➕ Novo grupo</button>
       </div>
       <div className="groups">
-        {groups.length === 0 && <div style={{ padding: 20, color: 'var(--muted)', textAlign: 'center' }}>
-          Você ainda não está em nenhum grupo.</div>}
+        {groups.length === 0 && (
+          <div className="side-empty">
+            <span>Você ainda não está em nenhum grupo.</span>
+            {!admin && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Peça o número de um grupo pra alguém entrar.</span>}
+          </div>
+        )}
         {groups.map((g) => (
           <div key={g.id} className={`group-item ${active?.id === g.id ? 'active' : ''}`}
             onClick={() => setActive(g)}>
-            <div className="avatar">{g.name[0]?.toUpperCase()}</div>
+            <Avatar name={g.name} />
             <div className="col">
               <div className="gp-name">{g.name}</div>
-              <div className="gp-meta">{g.owner_id === user.id ? '👑 Sua criação' : 'Grupo'}</div>
+              <div className="gp-meta">{g.owner_id === user.id ? '👑 Seu grupo' : 'Grupo'}</div>
             </div>
           </div>
         ))}
@@ -289,12 +304,10 @@ function Sidebar({ groups, active, setActive, admin, user, onNew, onJoin, onSett
 }
 
 /* ============ CHAT ============ */
-function ChatView({ group, user, admin, onBack, onMembers, onLeft }) {
+function ChatView({ group, user, profile, onBack, onMembers, onLeft }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
-  const [typing, setTyping] = useState(false);
-  const [room, setRoom] = useState('idle'); // idle | calling | inCall
-  const [callKind, setCallKind] = useState(null);
+  const [call, setCall] = useState(null);
   const messagesEnd = useRef(null);
   const fileRef = useRef(null);
 
@@ -317,8 +330,10 @@ function ChatView({ group, user, admin, onBack, onMembers, onLeft }) {
   }, [messages]);
 
   const fetchMessages = async () => {
-    const { data } = await supabase
-      .from('messages').select('*').eq('group_id', group.id).order('created_at', { ascending: true }).limit(500);
+    const { data, error } = await supabase
+      .from('messages').select('*').eq('group_id', group.id)
+      .order('created_at', { ascending: true }).limit(500);
+    if (error) { console.error(error); toast('Erro ao carregar mensagens', true); }
     setMessages(data || []);
   };
 
@@ -327,36 +342,43 @@ function ChatView({ group, user, admin, onBack, onMembers, onLeft }) {
     const body = text.trim();
     if (!body) return;
     setText('');
-    await supabase.from('messages').insert({ group_id: group.id, user_id: user.id, content: body, kind: 'text' });
+    const { error } = await supabase.from('messages').insert({
+      group_id: group.id, user_id: user.id, content: body, kind: 'text',
+      author_name: profile || user.email?.split('@')[0],
+    });
+    if (error) { console.error(error); toast('Erro ao enviar mensagem', true); }
   };
 
   const onFile = async (e) => {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
-    const kind = f.type.startsWith('image/') ? 'image' : f.type.startsWith('video/') ? 'video' : f.type.startsWith('audio/') ? 'audio' : 'file';
+    const kind = f.type.startsWith('image/') ? 'image'
+      : f.type.startsWith('video/') ? 'video'
+      : f.type.startsWith('audio/') ? 'audio' : 'file';
     toast('Enviando mídia…');
     const path = `${group.id}/${Date.now()}_${f.name.replace(/[^\w.\-]/g, '_')}`;
     const { error } = await supabase.storage.from('media').upload(path, f);
-    if (error) { toast('Falha no upload'); return; }
+    if (error) { console.error(error); toast('Falha no upload', true); return; }
     const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
-    await supabase.from('messages').insert({ group_id: group.id, user_id: user.id, kind, media_url: url });
+    await supabase.from('messages').insert({
+      group_id: group.id, user_id: user.id, kind, media_url: url,
+      author_name: profile || user.email?.split('@')[0],
+    });
     toast('Enviado ✔');
   };
-
-  const doCall = (kind) => { setCallKind(kind); setRoom('calling'); };
 
   return (
     <>
       <div className="chat-header">
-        {onBack && <button className="icon-btn" onClick={onBack}>←</button>}
-        <div className="avatar">{group.name[0]?.toUpperCase()}</div>
+        <button className="icon-btn" onClick={onBack}>←</button>
+        <Avatar name={group.name} size={38} />
         <div className="gp-info" onClick={onMembers}>
           <h3>{group.name}</h3>
-          <div className="cnt">👑 {group.numberLabel || 'Grupo'} · toque p/ ver membros</div>
+          <div className="cnt">{group.owner_id === user.id ? '👑 Seu grupo · toque p/ membros' : 'Toque p/ ver membros'}</div>
         </div>
-        <button className="icon-btn" title="Chamada de voz" onClick={() => doCall('voice')}>📞</button>
-        <button className="icon-btn" title="Chamada de vídeo" onClick={() => doCall('video')}>📹</button>
+        <button className="icon-btn" title="Chamada de voz" onClick={() => setCall('voice')}>📞</button>
+        <button className="icon-btn" title="Chamada de vídeo" onClick={() => setCall('video')}>📹</button>
         <button className="icon-btn" title="Sair do grupo" onClick={() => {
           if (confirm('Sair deste grupo?')) onLeft();
         }}>🚪</button>
@@ -365,155 +387,157 @@ function ChatView({ group, user, admin, onBack, onMembers, onLeft }) {
       <div className="messages">
         {messages.map((m) => (
           <div key={m.id} className={`msg ${m.user_id === user.id ? 'out' : 'in'}`}>
-            {m.user_id !== user.id && <div className="author print">{m.author_name || 'Alguém'}</div>}
+            {m.user_id !== user.id && <div className="author">{m.author_name || 'Alguém'}</div>}
             {m.kind === 'image' && <span className="media-space"><img src={m.media_url} alt="" onClick={() => window.open(m.media_url, '_blank')} /></span>}
             {m.kind === 'video' && <span className="media-space"><video src={m.media_url} controls /></span>}
             {m.kind === 'audio' && <span className="media-space"><audio src={m.media_url} controls /></span>}
-            {m.kind === 'file' && <div><a href={m.media_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent2)' }}>📎 {m.media_name || 'Arquivo'}</a></div>}
+            {m.kind === 'file' && (
+              <div className="body"><a href={m.media_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent2)' }}>📎 Arquivo</a></div>
+            )}
             {m.content && <div className="body">{m.content}</div>}
-            <span className="time">{fmtTime(m.created_at)}</span>
+            <span className="time">{fmtTime(m.created_at)}{m.user_id === user.id ? ' ✓✓' : ''}</span>
           </div>
         ))}
         <div ref={messagesEnd} />
       </div>
 
-      {typing && <div className="typing">alguém digitando…</div>}
-
       <form className="inputbar" onSubmit={send}>
         <input ref={fileRef} type="file" hidden accept="image/*,video/*,audio/*" onChange={onFile} />
         <button type="button" className="atc" onClick={() => fileRef.current?.click()}>📎</button>
-        <textarea rows={1} placeholder="Mensagem"
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setTyping(true);
-            clearTimeout(window.__t);
-            window.__t = setTimeout(() => setTyping(false), 1500);
-          }}
+        <textarea rows={1} placeholder="Mensagem" value={text}
+          onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
-        <button type="submit" className="snd">➤</button>
+        <button type="submit" className="snd" disabled={!text.trim()}>➤</button>
       </form>
 
-      {room !== 'idle' && (
-        <CallOverlay kind={callKind} group={group} room={room} setRoom={setRoom} />
-      )}
+      {call && <CallOverlay kind={call} group={group} onEnd={() => setCall(null)} />}
     </>
   );
 }
 
-/* ============ CHAMADAS (WebRTC) ============ */
-function CallOverlay({ kind, group, room, setRoom }) {
-  const peerRef = useRef(null);
-  const localRef = useRef(null);
-  const remoteRef = useRef(null);
-  const [remoteOn, setRemoteOn] = useState(false);
+/* ============ CHAMADAS ============ */
+function CallOverlay({ kind, group, onEnd }) {
+  const pcRef = useRef(null);
+  const streamRef = useRef(null);
   const [status, setStatus] = useState('Chamando…');
 
-  // Precisa de um servidor de sinalização para chamadas entre dispositivos.
-  // Supabase Realtime envia mensagens broadcast para o canal do grupo.
   useEffect(() => {
-    if (room === 'idle') return;
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-    peerRef.current = pc;
-
-    if (kind === 'video') {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        .then((s) => {
-          localRef.current = s;
-          s.getTracks().forEach((t) => pc.addTrack(t, s));
-          const el = document.getElementById('local-media');
-          if (el) { el.srcObject = s; }
-        }).catch(() => setStatus('Sem câmera — modo só voz'));
-    } else {
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then((s) => {
-          localRef.current = s;
-          s.getTracks().forEach((t) => pc.addTrack(t, s));
-        }).catch(() => {});
-    }
+    pcRef.current = pc;
+    const wantVideo = kind === 'video';
+    navigator.mediaDevices.getUserMedia({ video: wantVideo, audio: true })
+      .then((s) => {
+        streamRef.current = s;
+        s.getTracks().forEach((t) => pc.addTrack(t, s));
+        const el = document.getElementById('local-media');
+        if (wantVideo && el) { el.srcObject = s; el.play().catch(() => {}); }
+      }).catch(() => setStatus('Sem câmera/micro — chamada em silêncio'));
 
     const ch = supabase.channel(`call:${group.id}`);
     ch.on('broadcast', { event: 'signal' }, async ({ payload }) => {
-      await pc.setRemoteDescription(payload.desc);
-      if (payload.desc.type === 'offer') {
-        const ans = await pc.createAnswer();
-        await pc.setLocalDescription(ans);
-        ch.send({ type: 'broadcast', event: 'signal', payload: { desc: ans, from: supabase.auth.getUser() } });
-        setStatus('Conectado');
-      } else { setStatus('Conectado'); }
+      try {
+        await pc.setRemoteDescription(payload.desc);
+        if (payload.desc.type === 'offer') {
+          const ans = await pc.createAnswer();
+          await pc.setLocalDescription(ans);
+          ch.send({ type: 'broadcast', event: 'signal', payload: { desc: ans } });
+          setStatus('Conectado');
+        } else { setStatus('Conectado'); }
+      } catch (err) { console.error(err); }
     }).subscribe();
 
-    const makeOffer = async () => {
+    const t = setTimeout(async () => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       ch.send({ type: 'broadcast', event: 'signal', payload: { desc: offer } });
-      setStatus('Chamando…');
-    };
-    // pequeno atraso para se inscrever antes de enviar oferta
-    setTimeout(makeOffer, 500);
+    }, 600);
 
     pc.ontrack = (ev) => {
       const el = document.getElementById('remote-media');
-      if (el) { el.srcObject = ev.streams[0]; setRemoteOn(true); }
+      if (el) { el.srcObject = ev.streams[0]; el.play().catch(() => {}); }
     };
 
     return () => {
-      pc.close();
-      ch.unsubscribe();
-      localRef.current?.getTracks().forEach((t) => t.stop());
+      clearTimeout(t);
+      pc.close(); ch.unsubscribe();
+      streamRef.current?.getTracks().forEach((tr) => tr.stop());
     };
-  }, [room]);
+  }, []);
 
-  const endCall = () => {
-    peerRef.current?.close();
-    localRef.current?.getTracks().forEach((t) => t.stop());
-    setRoom('idle');
+  const end = () => {
+    pcRef.current?.close();
+    streamRef.current?.getTracks().forEach((tr) => tr.stop());
+    onEnd();
   };
 
-  if (room === 'calling') {
-    return (
-      <div className="call-overlay">
-        <div className="avatar">{group.name[0]?.toUpperCase()}</div>
-        <h2>{group.name}</h2>
-        <div className="status">{status} — {kind === 'voice' ? '📞 voz' : '📹 vídeo'}</div>
-        <div className="callbar">
-          <button className="call-btn red" onClick={endCall}>✕</button>
-        </div>
+  return (
+    <div className="call-overlay">
+      <Avatar name={group.name} size={84} />
+      <h2>{group.name}</h2>
+      <div className="status">{status} — {kind === 'voice' ? '📞 voz' : '📹 vídeo'}</div>
+      <div className="callbar">
+        <button className="call-btn red" onClick={end}>✕</button>
       </div>
-    );
-  }
-  return null;
+    </div>
+  );
 }
 
 /* ============ MODAIS ============ */
 function CreateModal({ admin, onClose, onCreate }) {
   const [name, setName] = useState('');
+  const [created, setCreated] = useState(null);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
   if (!admin) {
     return (
       <div className="modal-back" onClick={onClose}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
-          <h3>🔒 Acesso restrito</h3>
-          <div className="muted">Apenas Willyan pode criar grupos.<br/>Você entrou como visitante — peça o número de um grupo para entrar.</div>
+          <div className="modal-icon">🔒</div>
+          <h3>Acesso restrito</h3>
+          <div className="muted">Apenas <b>Willyan</b> pode criar grupos.<br />Você entrou como visitante — peça um número de grupo pra entrar.</div>
           <div className="actions"><button className="btn" onClick={onClose}>Entendi</button></div>
         </div>
       </div>
     );
   }
+
+  if (created) {
+    return (
+      <div className="modal-back" onClick={onClose}>
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-icon">🎉</div>
+          <h3>Grupo criado!</h3>
+          <div className="muted">Este é o <b>número secreto</b> do seu grupo. <b>Só você vê</b> — compartilhe com quem quiser que entre:</div>
+          <div className="code-big">{created.code}</div>
+          <div className="actions">
+            <button className="btn" onClick={onClose}>Fechar</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-back" onClick={onClose}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={async (e) => {
         e.preventDefault();
-        if (!name.trim()) return;
+        if (!name.trim() || busy) return;
+        setBusy(true); setErr('');
         const r = await onCreate(name.trim());
-        if (!r?.err) onClose();
+        setBusy(false);
+        if (r?.err) setErr(r.err);
+        else if (r?.ok) setCreated(r.group);
       }}>
-        <h3>➕ Criar grupo</h3>
-        <div className="muted">Gere um nome. Um número de 4 dígitos será sorteado — <b>só você</b> verá e poderá compartilhar.</div>
+        <div className="modal-icon">➕</div>
+        <h3>Criar grupo</h3>
+        <div className="muted">Escolha um nome. O número de 4 dígitos é sorteado e <b>só você vê</b> pra compartilhar.</div>
         <input className="input" placeholder="Nome do grupo" value={name}
-          onChange={(e) => setName(e.target.value)} required />
+          onChange={(e) => setName(e.target.value)} maxLength={40} required autoFocus />
+        <div className="err">{err}</div>
         <div className="actions">
           <button type="button" className="btn ghost" onClick={onClose}>Cancelar</button>
-          <button type="submit" className="btn">Criar</button>
+          <button type="submit" className="btn" disabled={busy}>{busy ? 'Criando…' : 'Criar'}</button>
         </div>
       </form>
     </div>
@@ -523,21 +547,26 @@ function CreateModal({ admin, onClose, onCreate }) {
 function JoinModal({ onClose, onJoin }) {
   const [code, setCode] = useState('');
   const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
   return (
     <div className="modal-back" onClick={onClose}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={async (e) => {
         e.preventDefault();
+        if (busy) return;
+        setBusy(true); setErr('');
         const r = await onJoin(code);
+        setBusy(false);
         if (r?.err) setErr(r.err); else onClose();
       }}>
-        <h3>🔢 Entrar num grupo</h3>
-        <div className="muted">Digite o número de 4 dígitos que o criador do grupo compartilhou com você.</div>
-        <input className="input" placeholder="Ex.: 4712" value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))} required />
+        <div className="modal-icon">🔢</div>
+        <h3>Entrar num grupo</h3>
+        <div className="muted">Digite o número de 4 dígitos que o criador do grupo compartilhou.</div>
+        <input className="input" placeholder="Ex.: 4712" value={code} inputMode="numeric"
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))} required autoFocus />
         <div className="err">{err}</div>
         <div className="actions">
           <button type="button" className="btn ghost" onClick={onClose}>Cancelar</button>
-          <button type="submit" className="btn">Entrar</button>
+          <button type="submit" className="btn" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
         </div>
       </form>
     </div>
@@ -547,9 +576,7 @@ function JoinModal({ onClose, onJoin }) {
 function MembersModal({ group, user, admin, onClose, onChanged }) {
   const [members, setMembers] = useState([]);
   const [lock, setLock] = useState(!!group.locked);
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
   const load = async () => {
     const { data } = await supabase.from('group_members')
       .select('user_id').eq('group_id', group.id);
@@ -558,41 +585,45 @@ function MembersModal({ group, user, admin, onClose, onChanged }) {
   const isOwner = admin && group.owner_id === user.id;
   const kick = async (uid) => {
     if (uid === user.id) return;
-    await supabase.from('group_members').delete()
-      .eq('group_id', group.id).eq('user_id', uid);
-    await load();
+    await supabase.rpc('remove_member', { gid: group.id, uid });
+    await load(); onChanged();
+    toast('Membro removido');
   };
   const toggleLock = async () => {
     const nl = !lock;
     setLock(nl);
     await supabase.from('groups').update({ locked: nl }).eq('id', group.id);
+    toast(nl ? '🔒 Só você pode enviar mensagem agora' : '🔓 Todos podem enviar mensagem');
   };
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>👥 Membros — {group.name}</h3>
         <div className="muted">
-          {isOwner && <>Você é o 👑 criador. Pode expulsar pessoas e travar o grupo.<br/></>}
-          Código do grupo: <b>{group.code}</b> → {isOwner ? 'Compartilhe só com quem deve entrar.' : 'Somente o criador vê o código aqui.'}
+          {isOwner ? (
+            <>Você é o 👑 criador. Número do grupo: <b>{group.code}</b> — compartilhe só com quem deve entrar.</>
+          ) : (
+            <>Número do grupo: <b>{group.code}</b></>
+          )}
         </div>
         {isOwner && (
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 13, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={lock} onChange={toggleLock} />
-              Somente o criador pode enviar mensagem
-            </label>
-          </div>
+          <label className="lock-row">
+            <input type="checkbox" checked={lock} onChange={toggleLock} />
+            🔒 Somente o criador pode enviar mensagem
+          </label>
         )}
-        <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+        <div className="member-list">
           {members.map((m) => (
-            <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-              <div className="avatar">{m.user_id === user.id ? 'Você' : '👤'}</div>
-              <span style={{ flex: 1, fontSize: 14 }}>
-                {m.user_id === user.id ? 'Você' : (m.user_id === group.owner_id ? '👑 Criador' : 'Membro')}
-              </span>
+            <div key={m.user_id} className="member-item">
+              <Avatar name={m.user_id === user.id ? 'Você' : '👤'} size={34} />
+              <div className="col">
+                <div className="gp-name" style={{ fontSize: 14 }}>
+                  {m.user_id === user.id ? 'Você' : (m.user_id === group.owner_id ? 'Criador' : 'Membro')}
+                </div>
+                <div className="gp-meta">{m.user_id === group.owner_id ? '👑' : '—'}</div>
+              </div>
               {isOwner && m.user_id !== user.id && (
-                <button className="btn ghost" style={{ margin: 0, padding: '6px 10px', color: 'var(--danger)' }}
-                  onClick={() => kick(m.user_id)}>Excluir</button>
+                <button className="btn ghost danger" onClick={() => kick(m.user_id)}>Expulsar</button>
               )}
             </div>
           ))}
@@ -621,6 +652,7 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
     if (name.trim()) {
       await supabase.auth.updateUser({ data: { display_name: name.trim() } });
       setProfile(name.trim());
+      toast('Nome salvo ✔');
     }
     onClose();
   };
@@ -638,12 +670,12 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
             </button>
           ))}
         </div>
-        <div className="muted" style={{ marginTop: 8 }}>Modo</div>
+        <div className="muted" style={{ marginTop: 12 }}>Modo</div>
         <div className="mode-row">
           <button className={`btn ${mode === 'dark' ? '' : 'ghost'}`} onClick={() => { setMode('dark'); apply(theme, 'dark'); }}>🌙 Escuro</button>
           <button className={`btn ${mode === 'light' ? '' : 'ghost'}`} onClick={() => { setMode('light'); apply(theme, 'light'); }}>☀️ Claro</button>
         </div>
-        <div className="muted" style={{ marginTop: 16 }}>Seu nome no app</div>
+        <div className="muted" style={{ marginTop: 12 }}>Seu nome no app</div>
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
         <div className="actions">
           <button className="btn ghost" onClick={onClose}>Fechar</button>
@@ -652,12 +684,4 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
       </div>
     </div>
   );
-}
-
-function toast(msg) {
-  let el = document.createElement('div');
-  el.textContent = msg;
-  el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);color:var(--text);padding:10px 16px;border-radius:8px;z-index:300;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.3)';
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2200);
 }
