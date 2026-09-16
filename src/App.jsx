@@ -1001,8 +1001,8 @@ function CallOverlay({ kind, group, user, onEnd }) {
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     pcRef.current = pc;
     const wantVideo = kind === 'video';
-    // marca que a chamada está ativa no grupo (trigger gera o card no chat)
-    supabase.from('groups').update({ call_active: true, last_call_kind: kind }).eq('id', group.id);
+    // marca que a chamada está ativa no grupo (trigger gera o card no chat) — via RPC p/ qualquer membro
+    supabase.rpc('set_call_state', { gid: group.id, p_active: true, p_kind: kind }).then(() => {}, () => {});
     // registra presença na tabela (RPC)
     const myName = user.user_metadata?.display_name || user.email || 'Alguém';
     supabase.rpc('join_call', { gid: group.id, p_name: myName }).then(() => {}, () => {});
@@ -1062,8 +1062,8 @@ function CallOverlay({ kind, group, user, onEnd }) {
       clearTimeout(t);
       pc.close(); ch.unsubscribe(); ch2.unsubscribe();
       supabase.rpc('leave_call', { gid: group.id }).then(() => {}, () => {});
+      supabase.rpc('set_call_state', { gid: group.id, p_active: false, p_kind: null }).then(() => {}, () => {});
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
-      supabase.from('groups').update({ call_active: false }).eq('id', group.id);
     };
   }, []);
 
@@ -1080,7 +1080,8 @@ function CallOverlay({ kind, group, user, onEnd }) {
   const end = () => {
     pcRef.current?.close();
     streamRef.current?.getTracks().forEach((tr) => tr.stop());
-    supabase.from('groups').update({ call_active: false }).eq('id', group.id);
+    supabase.rpc('leave_call', { gid: group.id }).then(() => {}, () => {});
+    supabase.rpc('set_call_state', { gid: group.id, p_active: false, p_kind: null }).then(() => {}, () => {});
     onEnd();
   };
 
