@@ -546,6 +546,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     const [replying, setReplying] = useState(null); // msg que está sendo respondida
       const [canCall, setCanCall] = useState(true); // permissão de chamada DESTE usuário
         const [callCount, setCallCount] = useState(0); // quantos estão na chamada agora
+        const [gptBusy, setGptBusy] = useState(false); // já respondendo? (evita duplicar)
         const messagesEnd = useRef(null);
 
         // carrega a permissão de chamada individual
@@ -593,6 +594,8 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages',
         filter: `group_id=eq.${group.id}` }, (payload) => {
         setMessages((m) => [...m, payload.new]);
+        // bot @gpt: responde só se a mensagem mencionar @gpt e não for a resposta do próprio bot
+        if (payload.new.user_id !== '00000000-0000-0000-0000-000000000000') askGpt(payload.new);
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages',
         filter: `group_id=eq.${group.id}` }, () => fetchMessages())
@@ -603,6 +606,29 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, hidden]);
+
+  // pergunta pro bot @gpt (só responde se mencionar @gpt) — via endpoint /api/gpt (Groq, chave escondida)
+  const askGpt = async (msg) => {
+    if (gptBusy) return; // evita resposta duplicada
+    const text = (msg.content || '').toLowerCase();
+    if (!text.includes('@gpt')) return;
+    setGptBusy(true);
+    try {
+      let imageUrl = null;
+      if (msg.kind === 'image' && msg.media_url) imageUrl = msg.media_url;
+      let prompt = (msg.content || '').replace(/@gpt/gi, '').trim() || 'Descreva esta imagem';
+      const res = await fetch('/api/gpt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, imageUrl }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.answer) { toast('🤖 GPT indisponível no momento', true); return; }
+      // insere a resposta do bot no grupo (RPC ignora RLS, user_id fixo do bot)
+      await supabase.rpc('bot_send', { gid: group.id, p_content: data.answer });
+    } catch (err) { console.error(err); toast('🤖 Erro ao chamar o GPT', true); }
+    setGptBusy(false);
+  };
 
   const fetchMessages = async () => {
     let q = supabase
