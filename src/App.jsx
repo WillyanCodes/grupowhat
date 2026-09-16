@@ -91,6 +91,16 @@ export default function App() {
     return () => sub?.unsubscribe();
   }, []);
 
+  // garante tema salvo ao abrir
+  useEffect(() => {
+    try {
+      const th = localStorage.getItem('gw_theme') || 'green';
+      const md = localStorage.getItem('gw_mode') || 'dark';
+      document.body.classList.remove('light', ...THEMES.map((t) => 'theme-' + t.id));
+      document.body.classList.add(md === 'light' ? 'light' : '', 'theme-' + th);
+    } catch (_) {}
+  }, []);
+
   let body;
   if (loading) body = <div className="boot"><span className="spin" />Carregando…</div>;
   else if (!session) body = <AuthScreen />;
@@ -206,12 +216,15 @@ function Main({ user, profile, setProfile }) {
   const loadGroups = async () => {
     const { data: rows, error } = await supabase
       .from('group_members')
-      .select('group_id, groups!group_id(id, name, code, owner_id, locked, avatar_url, description)');
+      .select('group_id, status, joined_at, groups!group_id(id, name, code, owner_id, locked, avatar_url, description)');
     if (error) { console.error(error); toast('Erro ao carregar grupos', true); return; }
+    const seen = new Set();
     const list = [];
     (rows || []).forEach((r) => {
       const g = r.groups || r.group || r;
-      if (g && g.id) list.push(g);
+      if (!g || !g.id || seen.has(g.id)) return; // dedupe (corrige "2 abas do mesmo grupo")
+      seen.add(g.id);
+      list.push({ ...g, member_status: r.status || 'approved', joined_at: r.joined_at });
     });
     list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     setGroups(list);
@@ -221,10 +234,10 @@ function Main({ user, profile, setProfile }) {
   const joinGroup = async (code) => {
     const num = parseInt(code, 10);
     if (!Number.isInteger(num)) return { err: 'Número inválido.' };
-    const { data: gid, error } = await supabase.rpc('join_by_code', { p_code: num });
+    const { data: gid, error } = await supabase.rpc('request_join', { p_code: num });
     if (error) { console.error(error); return { err: 'Erro. Confira o número e tente de novo.' }; }
     if (!gid) return { err: 'Grupo não encontrado. Confira o número?' };
-    toast('Você entrou no grupo! 🎉');
+    toast('Pedido enviado! Aguarde o criador aprovar. ⏳');
     await loadGroups();
     return {};
   };
@@ -235,17 +248,19 @@ function Main({ user, profile, setProfile }) {
       .from('groups').insert({ name, code, owner_id: user.id })
       .select().single();
     if (error) { console.error(error); return { err: 'Falha ao criar. Tente de novo.' }; }
-    await supabase.rpc('join_by_code', { p_code: code });
+    await supabase.from('group_members').insert({ group_id: g.id, user_id: user.id, status: 'approved' });
     await loadGroups();
     return { ok: true, group: g };
   };
 
   const leaveOrDelete = async (gid) => {
-    await supabase.from('group_members').delete().eq('group_id', gid).eq('user_id', user.id);
     const g = groups.find((x) => x.id === gid);
-    if (admin && g?.owner_id === user.id) {
+    if (g?.owner_id === user.id) {
+      // dono saindo = apaga o grupo
       await supabase.from('messages').delete().eq('group_id', gid);
       await supabase.from('groups').delete().eq('id', gid);
+    } else {
+      await supabase.from('group_members').delete().eq('group_id', gid).eq('user_id', user.id);
     }
     await loadGroups();
     if (active?.id === gid) { setActive(null); setMobileView('list'); }
@@ -339,7 +354,9 @@ function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoi
             <Avatar name={g.name} url={g.avatar_url} />
             <div className="col">
               <div className="gp-name">{g.name}</div>
-              <div className="gp-meta">{g.owner_id === user.id ? '👑 Seu grupo' : 'Grupo'}</div>
+              <div className="gp-meta">
+                {g.member_status === 'pending' ? '⏳ Aguardando aprovação' : (g.owner_id === user.id ? '👑 Seu grupo' : 'Grupo')}
+              </div>
             </div>
           </div>
         ))}
@@ -350,6 +367,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoi
 
 /* ============ CHAT ============ */
 function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
+  const pending = group.member_status === 'pending';
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [call, setCall] = useState(null);
@@ -365,6 +383,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   const recTimer = useRef(null);
 
   useEffect(() => {
+    if (pending) return;
     fetchMessages();
     fetchEvents();
     const sub = supabase
@@ -377,22 +396,27 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         filter: `group_id=eq.${group.id}` }, () => fetchMessages())
       .subscribe();
     return () => supabase.removeChannel(sub);
-  }, [group.id]);
+  }, [group.id, pending]);
 
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, hidden]);
 
   const fetchMessages = async () => {
-    const { data, error } = await supabase
+    let q = supabase
       .from('messages').select('*').eq('group_id', group.id)
       .order('created_at', { ascending: true }).limit(500);
+    // só mensagens a partir do momento em que a pessoa entrou no grupo
+    if (group.joined_at) q = q.gte('created_at', group.joined_at);
+    const { data, error } = await q;
     if (error) { console.error(error); toast('Erro ao carregar mensagens', true); }
     setMessages(data || []);
   };
 
   const fetchEvents = async () => {
-    const { data, error } = await supabase.from('message_events').select('message_id, kind');
+    // só eventos do próprio usuário (visualização única é por usuário)
+    const { data, error } = await supabase.from('message_events')
+      .select('message_id, kind').eq('user_id', user.id);
     if (error || !data) return;
     const h = new Set();
     const v = new Map();
@@ -506,6 +530,24 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
 
   const visible = messages.filter((m) => !(m.one_view && m.user_id !== user.id && hidden.has(m.id)));
   const canDeleteAll = (m) => m.user_id === user.id;
+
+  if (pending) {
+    return (
+      <>
+        <div className="chat-header">
+          <button className="icon-btn" onClick={onBack}>←</button>
+          <Avatar name={group.name} url={group.avatar_url} size={42} />
+          <div className="gp-info"><h3>{group.name}</h3></div>
+          <button className="icon-btn" title="Sair" onClick={() => { if (confirm('Sair deste grupo?')) onLeft(); }}>🚪</button>
+        </div>
+        <div className="gate">
+          <div className="gate-icon">⏳</div>
+          <h3>Aguardando aprovação</h3>
+          <p>O criador do grupo precisa aprovar sua entrada.<br />Você verá as mensagens novas assim que for aprovado.</p>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -784,13 +826,13 @@ function JoinModal({ onClose, onJoin }) {
       }}>
         <div className="modal-icon">🔢</div>
         <h3>Entrar num grupo</h3>
-        <div className="muted">Digite o número de 4 dígitos que o criador do grupo compartilhou.</div>
+        <div className="muted">Digite o número de 4 dígitos que o criador do grupo compartilhou. <b>O criador precisa aprovar sua entrada.</b></div>
         <input className="input" placeholder="Ex.: 4712" value={code} inputMode="numeric"
           onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))} required autoFocus />
         <div className="err">{err}</div>
         <div className="actions">
           <button type="button" className="btn ghost" onClick={onClose}>Cancelar</button>
-          <button type="submit" className="btn" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
+          <button type="submit" className="btn" disabled={busy}>{busy ? 'Enviando…' : 'Pedir entrada'}</button>
         </div>
       </form>
     </div>
@@ -809,7 +851,7 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
   useEffect(() => { load(); }, []);
   const load = async () => {
     const { data } = await supabase.from('group_members')
-      .select('user_id').eq('group_id', group.id);
+      .select('user_id, status, joined_at').eq('group_id', group.id);
     setMembers(data || []);
   };
 
@@ -818,6 +860,16 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
     await supabase.rpc('remove_member', { gid: group.id, uid });
     await load(); onChanged();
     toast('Membro removido');
+  };
+  const approve = async (uid) => {
+    await supabase.rpc('approve_member', { gid: group.id, uid });
+    await load(); onChanged();
+    toast('Membro aprovado ✔');
+  };
+  const reject = async (uid) => {
+    await supabase.rpc('reject_member', { gid: group.id, uid });
+    await load(); onChanged();
+    toast('Pedido recusado');
   };
   const toggleLock = async () => {
     const nl = !lock;
@@ -844,6 +896,8 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
     onChanged();
     toast('Foto atualizada ✔');
   };
+
+  const pendentes = members.filter((m) => m.status === 'pending').length;
 
   return (
     <div className="modal-back" onClick={onClose}>
@@ -875,12 +929,18 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
           </>
         )}
 
+        {isOwner && pendentes > 0 && (
+          <div className="pending-note" style={{ marginTop: 10 }}>
+            ✋ {pendentes} pedido(s) de entrada aguardando sua aprovação
+          </div>
+        )}
+
         {isOwner && (
-          <div className="muted" style={{ marginTop: 6 }}>
+          <div className="muted" style={{ marginTop: 8 }}>
             Número secreto do grupo: <b>{group.code}</b> — compartilhe só com quem deve entrar.
           </div>
         )}
-        {!isOwner && <div className="muted" style={{ marginTop: 6 }}>Código do grupo: visível apenas para o criador.</div>}
+        {!isOwner && <div className="muted" style={{ marginTop: 8 }}>Código do grupo: visível apenas para o criador.</div>}
 
         <div className="muted" style={{ marginTop: 12 }}>Membros ({members.length})</div>
         <div className="member-list">
@@ -891,10 +951,21 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
                 <div className="gp-name" style={{ fontSize: 14 }}>
                   {m.user_id === user.id ? 'Você' : (m.user_id === group.owner_id ? 'Criador' : 'Membro')}
                 </div>
-                <div className="gp-meta">{m.user_id === group.owner_id ? '👑' : '—'}</div>
+                <div className="gp-meta">
+                  {m.user_id === group.owner_id ? '👑' : m.status === 'pending' ? '⏳ Pendente' : '—'}
+                </div>
               </div>
               {isOwner && m.user_id !== user.id && (
-                <button className="btn ghost danger" onClick={() => kick(m.user_id)}>Expulsar</button>
+                <>
+                  {m.status === 'pending' ? (
+                    <div className="member-actions">
+                      <button className="btn ghost ok" onClick={() => approve(m.user_id)}>✓</button>
+                      <button className="btn ghost danger" onClick={() => reject(m.user_id)}>✕</button>
+                    </div>
+                  ) : (
+                    <button className="btn ghost danger" onClick={() => kick(m.user_id)}>Expulsar</button>
+                  )}
+                </>
               )}
             </div>
           ))}
