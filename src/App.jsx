@@ -95,6 +95,8 @@ function SystemCard({ m, isOwner, onDecide, onJoinCall, callCount }) {
     return <div className="sys-card">🔓 {m.author_name || 'Admin'} liberou o grupo — todos podem enviar mensagem normalmente</div>;
   }
   if (m.system_type === 'call_started') {
+    // chamada vazia/encerrada → card some; fica só o "encerrou a chamada"
+    if (!callCount || callCount < 1) return null;
     const isVid = (m.content || '').includes('vídeo');
     return (
       <div className="sys-card call-card">
