@@ -247,6 +247,8 @@ function Main({ user, profile, setProfile }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [mobileView, setMobileView] = useState('list');
+  const [notifs, setNotifs] = useState([]);
+  const [showNotifs, setShowNotifs] = useState(false);
 
   useEffect(() => {
     const dn = user.user_metadata?.display_name;
@@ -265,12 +267,34 @@ function Main({ user, profile, setProfile }) {
       const g = r.groups || r.group || r;
       if (!g || !g.id || seen.has(g.id)) return; // dedupe (corrige "2 abas do mesmo grupo")
       seen.add(g.id);
-      list.push({ ...g, member_status: r.status || 'approved', joined_at: r.joined_at });
+      // SÓ inclui na lista se o status for APROVADO (pendente fica invisível até admin aceitar)
+      if (r.status !== 'approved') return;
+      list.push({ ...g, member_status: r.status, joined_at: r.joined_at });
     });
     list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     setGroups(list);
     setActive((cur) => cur ? list.find((g) => g.id === cur.id) || null : null);
   };
+
+  const loadNotifs = async () => {
+    if (!admin) return;
+    const { data, error } = await supabase
+      .from('group_notifications')
+      .select('id, group_id, kind, actor_id, target_user_id, message, created_at, read')
+      .order('created_at', { ascending: false }).limit(20);
+    if (error) { console.error(error); return; }
+    setNotifs(data || []);
+  };
+
+  useEffect(() => {
+    if (!admin) return;
+    loadNotifs();
+    const ch = supabase.channel('notifs-admin')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_notifications' },
+        () => { loadNotifs(); toast('🔔 Novo pedido de entrada'); })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [admin]);
 
   const joinGroup = async (code) => {
     const num = parseInt(code, 10);
@@ -332,6 +356,14 @@ function Main({ user, profile, setProfile }) {
       {showJoin && <JoinModal onClose={() => setShowJoin(false)} onJoin={joinGroup} />}
       {showSettings && <SettingsModal user={user} profile={profile} setProfile={setProfile}
         onClose={() => setShowSettings(false)} />}
+      {showNotifs && admin && (
+        <NotifsModal notifs={notifs} groups={groups} onClose={() => setShowNotifs(false)}
+          onOpenGroup={(gid) => {
+            const g = groups.find((x) => x.id === gid);
+            if (g) { setActive(g); setMobileView('chat'); }
+            setShowNotifs(false);
+          }} onChanged={loadNotifs} />
+      )}
       {showInfo && active &&
         <GroupInfoModal group={active} user={user} admin={admin} onClose={() => setShowInfo(false)}
           onChanged={loadGroups} />}
@@ -360,7 +392,13 @@ function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoi
       <header>
         <div className="logo">💬 GrupoWhat</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
-          {admin && <span className="crown" title="Admin">👑</span>}
+          {admin && <>
+            <span className="crown" title="Admin">👑</span>
+            <div className="notif-wrap" onClick={() => setShowNotifs(true)}>
+              <span className={`notif-bell ${notifs.length ? 'has' : ''}`}>🔔</span>
+              {notifs.length > 0 && <span className="notif-badge">{notifs.length}</span>}
+            </div>
+          </>}
           <div className="avatar-wrap" onClick={() => setMenuOpen((v) => !v)}>
             <Avatar name={profile || user.email} size={36} />
           </div>
@@ -492,11 +530,20 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     const body = text.trim();
     if (!body) return;
     setText('');
-    await insertMsg({
+    const payload = {
       group_id: group.id, user_id: user.id, content: body, kind: 'text',
       author_name: profile || user.email?.split('@')[0],
-      reply_to: replying?.id || null,
-    });
+    };
+    // resposta: tenta salvar reply_to, mas se a coluna não existir, não quebra o envio
+    if (replying?.id) {
+      try {
+        const { error } = await supabase.from('messages').insert({ ...payload, reply_to: replying.id });
+        if (error && error.code !== 'PGRST204') throw error;
+        setReplying(null);
+        return;
+      } catch (_) {}
+    }
+    await insertMsg(payload);
     setReplying(null);
   };
 
@@ -508,6 +555,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   };
 
   const sendFile = async (oneView) => {
+    if (pending) { toast('Aguarde a aprovação para enviar mídia ⏳', true); return; }
     const f = pendingFile;
     setPendingFile(null);
     if (!f) return;
@@ -528,6 +576,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
 
   /* ===== gravação de áudio ===== */
   const startRec = async () => {
+    if (pending) { toast('Aguarde a aprovação para enviar áudio ⏳', true); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
@@ -1077,6 +1126,55 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
                   )}
                 </>
               )}
+            </div>
+          ))}
+        </div>
+        <div className="actions"><button className="btn" onClick={onClose}>Fechar</button></div>
+      </div>
+    </div>
+  );
+}
+
+function NotifsModal({ notifs, groups, onClose, onOpenGroup, onChanged }) {
+  const act = async (nid, gid, uid, action) => {
+    try {
+      if (action === 'approve') await supabase.rpc('approve_member', { gid, uid });
+      else await supabase.rpc('reject_member', { gid, uid });
+      toast(action === 'approve' ? 'Membro aprovado ✔' : 'Pedido recusado');
+      onChanged();
+    } catch (err) { console.error(err); toast('Erro na ação', true); }
+  };
+  const gName = (gid) => groups.find((g) => g.id === gid)?.name || '…';
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-icon">🔔</div>
+        <h3>Notificações</h3>
+        {notifs.length === 0 && <div className="muted" style={{ textAlign: 'center', margin: '18px 0' }}>Nenhuma notificação.</div>}
+        <div className="notif-list">
+          {notifs.map((n) => (
+            <div key={n.id} className="notif-item">
+              <div className="col">
+                <div className="gp-name" style={{ fontSize: 14 }}>{gName(n.group_id)}</div>
+                <div className="gp-meta">
+                  {n.kind === 'join_request' ? '⏳ Novo pedido de entrada'
+                    : n.kind === 'approved' ? '✅ Entrada aprovada'
+                    : n.kind === 'rejected' ? '❌ Pedido recusado'
+                    : n.kind === 'kicked' ? '🚫 Expulso do grupo'
+                    : n.kind === 'left' ? '🚪 Saiu do grupo' : n.message}
+                </div>
+              </div>
+              <div className="member-actions">
+                {n.kind === 'join_request' && (
+                  <>
+                    <button className="btn ghost ok" title="Aprovar"
+                      onClick={() => act(n.id, n.group_id, n.actor_id, 'approve')}>✓</button>
+                    <button className="btn ghost danger" title="Recusar"
+                      onClick={() => act(n.id, n.group_id, n.actor_id, 'reject')}>✕</button>
+                  </>
+                )}
+                <button className="btn ghost" title="Abrir grupo" onClick={() => onOpenGroup(n.group_id)}>➤</button>
+              </div>
             </div>
           ))}
         </div>
