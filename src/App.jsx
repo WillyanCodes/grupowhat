@@ -417,9 +417,19 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   const [menuMsg, setMenuMsg] = useState(null);
   const [pendingFile, setPendingFile] = useState(null);
   const [recording, setRecording] = useState(false);
-  const [recTime, setRecTime] = useState(0);
-  const [oneView, setOneView] = useState(null); // modal local da visualização única
-  const messagesEnd = useRef(null);
+    const [recTime, setRecTime] = useState(0);
+    const [oneView, setOneView] = useState(null);
+    const [shotWarned, setShotWarned] = useState(false);
+    const messagesEnd = useRef(null);
+
+    // screenshot deterrent: detect PrintScreen key + visibility change
+    useEffect(() => {
+      const onKey = (e) => { if (e.key === 'PrintScreen' && oneView) { e.preventDefault(); toast('🔒 Captura bloqueada — visualização única', true); setShotWarned(true); setTimeout(() => setShotWarned(false), 2000); } };
+      const onVis = () => { if (document.hidden && oneView && !shotWarned) { toast('🔒 Captura detectada — visualização única', true); setShotWarned(true); setTimeout(() => setShotWarned(false), 2000); } };
+      window.addEventListener('keydown', onKey);
+      document.addEventListener('visibilitychange', onVis);
+      return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('visibilitychange', onVis); };
+    }, [oneView, shotWarned]);
   const fileRef = useRef(null);
   const recRef = useRef(null);
   const recTimer = useRef(null);
@@ -712,14 +722,17 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
 
       {call && <CallOverlay kind={call} group={group} onEnd={() => setCall(null)} />}
       {oneView && (
-        <div className="modal-back" onClick={closeOneView}>
-          <div className="modal one-view-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="icon-btn" style={{ position: 'absolute', top: 10, right: 10 }} onClick={closeOneView}>✕</button>
+        <div className="modal-back no-screenshot" onClick={closeOneView} onContextMenu={(e) => e.preventDefault()}>
+          <div className="modal one-view-modal no-screenshot" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+            <button className="icon-btn" style={{ position: 'absolute', top: 10, right: 10, zIndex: 10 }} onClick={closeOneView}>✕</button>
+            <div className="screenshot-warning" style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', color: 'rgba(255,255,255,0.7)', fontSize: 11, textAlign: 'center', pointerEvents: 'none', zIndex: 5 }}>
+              🔒 Visualização única — capturas de tela são monitoradas
+            </div>
             {messages.find((m) => m.id === oneView)?.kind === 'image' && (
-              <img src={messages.find((m) => m.id === oneView)?.media_url} alt="" className="one-view-full" />
+              <img src={messages.find((m) => m.id === oneView)?.media_url} alt="" className="one-view-full" onContextMenu={(e) => e.preventDefault()} />
             )}
             {messages.find((m) => m.id === oneView)?.kind === 'video' && (
-              <video src={messages.find((m) => m.id === oneView)?.media_url} controls className="one-view-full" autoPlay />
+              <video src={messages.find((m) => m.id === oneView)?.media_url} controls className="one-view-full" autoPlay disablePictureInPicture controlsList="nodownload noremoteplayback" onContextMenu={(e) => e.preventDefault()} />
             )}
           </div>
         </div>
