@@ -282,11 +282,6 @@ function Main({ user, profile, setProfile }) {
     loadGroups();
   }, []);
 
-  // tela de cadastro de nome: aparece UMA vez (quem não tem nome ainda)
-  if (!profile) {
-    return <NameOnboarding user={user} onDone={setProfile} />;
-  }
-
   const loadGroups = async () => {
     // função no banco: devolve SÓ grupos onde o usuário é aprovado — pendente é invisível por definição
     const { data, error } = await supabase.rpc('my_groups');
@@ -355,6 +350,11 @@ function Main({ user, profile, setProfile }) {
     await loadGroups();
     if (active?.id === gid) { setActive(null); setMobileView('list'); }
   };
+
+  // onboarding: quem ainda não tem nome vê a tela de cadastro UMA vez
+  if (!profile) {
+    return <NameOnboarding user={user} onDone={setProfile} />;
+  }
 
   return (
     <div className="app">
