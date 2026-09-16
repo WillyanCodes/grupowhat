@@ -462,6 +462,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
 /* ============ CHAT ============ */
 function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   const pending = group.member_status !== 'approved';
+  const lockedForMe = group.locked && group.owner_id !== user.id;
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [call, setCall] = useState(null);
@@ -542,6 +543,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
 
   const send = async (e) => {
     e?.preventDefault();
+    if (lockedForMe) { toast('🔒 Somente o criador pode enviar mensagem', true); return; }
     const body = text.trim();
     if (!body) return;
     setText('');
@@ -571,6 +573,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
 
   const sendFile = async (oneView) => {
     if (pending) { toast('Aguarde a aprovação para enviar mídia ⏳', true); return; }
+    if (lockedForMe) { toast('🔒 Somente o criador pode enviar mensagem', true); return; }
     const f = pendingFile;
     setPendingFile(null);
     if (!f) return;
@@ -592,6 +595,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   /* ===== gravação de áudio ===== */
   const startRec = async () => {
     if (pending) { toast('Aguarde a aprovação para enviar áudio ⏳', true); return; }
+    if (lockedForMe) { toast('🔒 Somente o criador pode enviar mensagem', true); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
@@ -814,6 +818,9 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         </div>
       )}
 
+      {lockedForMe ? (
+        <div className="locked-bar">🔒 Somente o criador pode enviar mensagem neste grupo</div>
+      ) : (
       <form className="inputbar" onSubmit={send}>
         <input ref={fileRef} type="file" hidden accept="image/*,video/*,audio/*" onChange={onPickFile} />
         <button type="button" className="atc" onClick={() => fileRef.current?.click()}>📎</button>
@@ -823,6 +830,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
         <button type="submit" className="snd" disabled={!text.trim()}>➤</button>
       </form>
+      )}
 
       {pendingFile && (
         <MediaModal file={pendingFile} onCancel={() => setPendingFile(null)} onSend={sendFile} />
