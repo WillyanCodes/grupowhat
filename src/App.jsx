@@ -88,6 +88,12 @@ function SystemCard({ m, isOwner, onDecide }) {
   if (m.system_type === 'member_joined') {
     return <div className="sys-card">👋 {m.author_name || 'Novo membro'} entrou no grupo</div>;
   }
+  if (m.system_type === 'group_locked') {
+    return <div className="sys-card">🔒 {m.author_name || 'Admin'} travou o grupo — somente ele pode enviar mensagem agora</div>;
+  }
+  if (m.system_type === 'group_unlocked') {
+    return <div className="sys-card">🔓 {m.author_name || 'Admin'} liberou o grupo — todos podem enviar mensagem normalmente</div>;
+  }
   return null;
 }
 
