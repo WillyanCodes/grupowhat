@@ -30,6 +30,47 @@ const hashHue = (s) => {
   return h;
 };
 
+const fmtDur = (s) => {
+  if (!s || !isFinite(s)) return '0:00';
+  const m = Math.floor(s / 60);
+  return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+};
+
+function AudioMsg({ src }) {
+  const ref = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [prog, setProg] = useState(0);
+  const [dur, setDur] = useState(0);
+  useEffect(() => {
+    const a = ref.current;
+    if (!a) return;
+    const upd = () => { setProg(a.currentTime / (a.duration || 1)); setDur(a.duration || 0); };
+    const end = () => setPlaying(false);
+    a.addEventListener('timeupdate', upd);
+    a.addEventListener('loadedmetadata', upd);
+    a.addEventListener('ended', end);
+    return () => { a.removeEventListener('timeupdate', upd); a.removeEventListener('loadedmetadata', upd); a.removeEventListener('ended', end); };
+  }, []);
+  const toggle = () => {
+    const a = ref.current;
+    if (!a) return;
+    if (a.paused) { a.play().then(() => setPlaying(true)).catch(() => {}); }
+    else { a.pause(); setPlaying(false); }
+  };
+  return (
+    <div className={`audio-player ${playing ? 'playing' : ''}`} onClick={toggle}>
+      <div className="ap-play">{playing ? '❚❚' : '▶'}</div>
+      <div className="ap-bars">
+        {Array.from({ length: 24 }).map((_, i) => (
+          <span key={i} style={{ height: `${22 + ((i * 37) % 78)}%`, animationDelay: `${(i % 8) * 0.08}s` }} />
+        ))}
+      </div>
+      <span className="ap-time">{fmtDur(prog * (dur || 0))}</span>
+      <audio ref={ref} src={src} preload="metadata" />
+    </div>
+  );
+}
+
 function Avatar({ name, url, size = 40, round = true }) {
   const hue = hashHue(name || '?');
   if (url) {
@@ -377,6 +418,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   const [pendingFile, setPendingFile] = useState(null);
   const [recording, setRecording] = useState(false);
   const [recTime, setRecTime] = useState(0);
+  const [oneView, setOneView] = useState(null); // modal local da visualização única
   const messagesEnd = useRef(null);
   const fileRef = useRef(null);
   const recRef = useRef(null);
@@ -526,6 +568,25 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     await supabase.rpc('view_msg', { mid: id });
     setViewed((v) => new Map(v).set(id, (v.get(id) || 0) + 1));
     setHidden((h) => new Set(h).add(id));
+    setOneView(id);
+  };
+  const closeOneView = () => setOneView(null);
+
+  const replyTo = (m) => {
+    setText(`↩️ ${(m.author_name || 'Alguém')}: ${m.content ? m.content.slice(0, 80) : (m.kind === 'image' ? '[Imagem]' : m.kind === 'audio' ? '[Áudio]' : m.kind === 'video' ? '[Vídeo]' : '[Mídia]')}\n`);
+    setMenuMsg(null);
+  };
+  const forwardMsg = async (m) => {
+    const target = prompt('Encaminhar para qual grupo? Digite o nome:', '');
+    if (!target) return;
+    const dest = groups.find((g) => g.name.toLowerCase() === target.toLowerCase() && g.id !== group.id);
+    if (!dest) { toast('Grupo não encontrado', true); return; }
+    await supabase.from('messages').insert({
+      group_id: dest.id, user_id: user.id, content: m.content || null, kind: m.kind,
+      media_url: m.media_url || null, one_view: false, author_name: profile || user.email?.split('@')[0],
+    });
+    toast('Encaminhado ✔');
+    setMenuMsg(null);
   };
 
   const visible = messages.filter((m) => !(m.one_view && m.user_id !== user.id && hidden.has(m.id)));
@@ -577,7 +638,8 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
           return (
             <React.Fragment key={m.id}>
               {showDay && <div className="day-divider">{fmtDay(m.created_at)}</div>}
-              <div className={`msg ${m.user_id === user.id ? 'out' : 'in'}`}>
+              <div className={`msg ${m.user_id === user.id ? 'out' : 'in'}`}
+                onContextMenu={(e) => { e.preventDefault(); setMenuMsg(m.id); }}>
                 {m.user_id !== user.id && <div className="author">{m.author_name || 'Alguém'}</div>}
                 {m.one_view && m.user_id === user.id && (
                   <div className="one-badge">🕐 Visualização única{viewed.has(m.id) ? ' · vista' : ''}</div>
@@ -602,7 +664,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                       : <video src={m.media_url} controls />}
                   </span>
                 )}
-                {m.kind === 'audio' && <span className="media-space"><audio src={m.media_url} controls /></span>}
+                {m.kind === 'audio' && <span className="media-space"><AudioMsg src={m.media_url} /></span>}
                 {m.kind === 'file' && (
                   <div className="body"><a href={m.media_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent2)' }}>📎 Arquivo</a></div>
                 )}
@@ -616,6 +678,8 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                   <div className="msg-menu" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => hideMsg(m.id)}>🗑️ Apagar pra mim</button>
                     {canDeleteAll(m) && <button onClick={() => deleteMsg(m.id)}>❌ Apagar pra todos</button>}
+                    <button onClick={() => replyTo(m)}>↩️ Responder</button>
+                    <button onClick={() => forwardMsg(m)}>➡️ Encaminhar</button>
                   </div>
                 )}
               </div>
@@ -647,6 +711,19 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
       )}
 
       {call && <CallOverlay kind={call} group={group} onEnd={() => setCall(null)} />}
+      {oneView && (
+        <div className="modal-back" onClick={closeOneView}>
+          <div className="modal one-view-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="icon-btn" style={{ position: 'absolute', top: 10, right: 10 }} onClick={closeOneView}>✕</button>
+            {messages.find((m) => m.id === oneView)?.kind === 'image' && (
+              <img src={messages.find((m) => m.id === oneView)?.media_url} alt="" className="one-view-full" />
+            )}
+            {messages.find((m) => m.id === oneView)?.kind === 'video' && (
+              <video src={messages.find((m) => m.id === oneView)?.media_url} controls className="one-view-full" autoPlay />
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }
