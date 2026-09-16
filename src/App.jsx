@@ -154,8 +154,7 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
-// marcador de versão do bundle (debug: se você ver "v7" no rodapé, o bundle novo está rodando)
-const VersionMark = () => <div style={{ position: 'fixed', top: 4, left: '50%', transform: 'translateX(-50%)', fontSize: 28, fontWeight: 800, color: '#f00', background: '#fff', padding: '2px 14px', borderRadius: 8, zIndex: 9999, boxShadow: '0 2px 12px rgba(0,0,0,.3)' }}>v7</div>;
+// marcador de versão removido — bundle novo confirmado (debug concluído)
 
 // ===== VARREDOR GLOBAL DE EMOJIS: troca QUALQUER emoji da interface por imagem Apple =====
 const SURROGATE_RE2 = /[\uD800-\uDBFF]/;
@@ -188,6 +187,7 @@ function startGlobalEmojiScanner() {
           if (s.index > last) frag.appendChild(document.createTextNode(text.slice(last, s.index)));
           const cp = [...s.segment].map((c) => c.codePointAt(0).toString(16).padStart(4, '0')).join('-');
           const url = `/emoji/${cp}.png`;
+          const CDN_FALLBACK = `https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/apple/64/${cp}.png`;
           const img = document.createElement('img');
           img.src = url;
           img.className = 'apple-emoji';
@@ -196,6 +196,8 @@ function startGlobalEmojiScanner() {
           img.style.verticalAlign = '-0.18em';
           img.alt = s.segment;
           img.draggable = false;
+          // se a local falhar (emoji que não baixei), puxa do CDN automático
+          img.onerror = () => { if (img.src !== CDN_FALLBACK) img.src = CDN_FALLBACK; };
           frag.appendChild(img);
           last = s.index + s.segment.length;
         }
@@ -259,7 +261,6 @@ export default function App() {
 
   return <>
     <ErrorBoundary>{body}</ErrorBoundary>
-    <VersionMark />
   </>;
 }
 
@@ -282,8 +283,10 @@ function AppleEmoji({ text = '', size = 18, className = '' }) {
       if (!SURROGATE_RE.test(s.segment)) continue; // não é emoji
       if (s.index > last) parts.push(text.slice(last, s.index));
       const url = emojiToApple(s.segment);
-      if (url) parts.push(<span key={s.index} className={`apple-emoji ${className}`} style={{ width: size, height: size, backgroundImage: `url(${url}?v=2)`, backgroundSize: 'contain' }} aria-label={s.segment} role="img" />);
-      else parts.push(s.segment);
+      if (url) {
+        const CDN_FALLBACK = `https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/apple/64/${[...s.segment].map((c) => c.codePointAt(0).toString(16).padStart(4, '0')).join('-')}.png`;
+        parts.push(<img key={s.index} src={url} alt={s.segment} className={`apple-emoji ${className}`} style={{ width: size, height: size }} draggable={false} onError={(e) => { if (e.currentTarget.src !== CDN_FALLBACK) e.currentTarget.src = CDN_FALLBACK; }} />);
+      } else parts.push(s.segment);
       last = s.index + s.segment.length;
     }
   } catch { /* fallback: mostra texto puro */ }
@@ -682,6 +685,19 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', onKey); };
   }, [menuMsg]);
+
+  // Esc SEM o menu aberto → volta pra tela inicial (lista de grupos, igual WhatsApp)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (menuMsg) { setMenuMsg(null); return; } // com menu aberto, só fecha o menu
+      const tag = (e.target || {}).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return; // não atrapalha quem está digitando
+      onBack();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [menuMsg, onBack]);
       const [canCall, setCanCall] = useState(true); // permissão de chamada DESTE usuário
         const [callCount, setCallCount] = useState(0); // quantos estão na chamada agora
         const [gptBusy, setGptBusy] = useState(false); // já respondendo? (evita duplicar)
