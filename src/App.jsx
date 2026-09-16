@@ -282,6 +282,11 @@ function Main({ user, profile, setProfile }) {
     loadGroups();
   }, []);
 
+  // tela de cadastro de nome: aparece UMA vez (quem não tem nome ainda)
+  if (!profile) {
+    return <NameOnboarding user={user} onDone={setProfile} />;
+  }
+
   const loadGroups = async () => {
     // função no banco: devolve SÓ grupos onde o usuário é aprovado — pendente é invisível por definição
     const { data, error } = await supabase.rpc('my_groups');
@@ -398,6 +403,42 @@ function EmptyChat() {
       <div className="empty-icon">💬</div>
       <h2>GrupoWhat</h2>
       <p>Escolha um grupo na lista ao lado<br />ou entre num grupo pelo número.</p>
+    </div>
+  );
+}
+
+/* ============ ONBOARDING DE NOME ============ */
+function NameOnboarding({ user, onDone }) {
+  const [name, setName] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async (e) => {
+    e.preventDefault();
+    const n = name.trim();
+    if (n.length < 2) { setErr('Digite um nome com pelo menos 2 letras.'); return; }
+    setBusy(true); setErr('');
+    try {
+      const { error } = await supabase.auth.updateUser({ data: { display_name: n } });
+      if (error) throw error;
+      onDone(n);
+    } catch (x) { setErr(cleanErr(x.message)); }
+    setBusy(false);
+  };
+  return (
+    <div className="auth">
+      <div className="auth-bg" />
+      <div className="auth-card">
+        <div className="auth-logo">💬</div>
+        <h1>Bem-vindo ao GrupoWhat!</h1>
+        <div className="sub">Escolha seu nome ou apelido — é assim que os outros vão te ver nos grupos.</div>
+        <form onSubmit={save}>
+          <input className="input" placeholder="Seu nome ou nick" value={name}
+            onChange={(e) => setName(e.target.value)} maxLength={30} autoFocus required />
+          <div className="hint">Você pode mudar isso depois em 🎨 Aparência → Seu nome.</div>
+          <div className="err">{err}</div>
+          <button type="submit" className="btn" disabled={busy}>{busy ? 'Salvando…' : 'Começar'}</button>
+        </form>
+      </div>
     </div>
   );
 }
