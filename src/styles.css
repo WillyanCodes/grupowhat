@@ -181,8 +181,12 @@ input, textarea { font-family: inherit; }
 .msg-menu-btn { position: absolute; bottom: 4px; right: 4px; background: transparent; border: none; color: var(--muted);
   font-size: 14px; padding: 2px 6px; border-radius: 6px; opacity: 0; transition: opacity .1s; }
 .msg:hover .msg-menu-btn, .msg-menu-btn:focus { opacity: 1; }
-.msg-menu { position: absolute; bottom: 26px; right: 4px; background: var(--panel); border: 1px solid var(--border);
+.msg-menu { position: absolute; bottom: 26px; background: var(--panel); border: 1px solid var(--border);
   border-radius: 12px; z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,0.4); padding: 4px; min-width: 170px; }
+/* mensagem do lado direito: menu abre pra esquerda (padrão) */
+.msg-menu.from-out { right: 4px; left: auto; }
+/* mensagem do lado esquerdo: menu abre pra DIREITA (não corta na borda) */
+.msg-menu.from-in { left: 4px; right: auto; }
 .msg-menu button { display: block; width: 100%; background: transparent; border: none; color: var(--text);
   padding: 9px 12px; text-align: left; font-size: 13px; border-radius: 8px; cursor: pointer; }
 .msg-menu button:hover { background: var(--panel2); }

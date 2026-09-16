@@ -524,7 +524,7 @@ function Main({ user, profile, setProfile }) {
         <div className="chat-main">
           {active
             ? <ChatView key={active.id} group={active} user={user} profile={profile}
-                onBack={() => setMobileView('list')}
+                onBack={() => { setActive(null); setMobileView('list'); }}
                 onInfo={() => setShowInfo(true)}
                 onLeft={async () => { await leaveOrDelete(active.id); }} />
             : <EmptyChat />}
@@ -1122,7 +1122,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                 </span>
                 <button className="msg-menu-btn" onClick={() => setMenuMsg(menuMsg === m.id ? null : m.id)}>⋮</button>
                 {menuMsg === m.id && (
-                  <div className="msg-menu" onClick={(e) => e.stopPropagation()}>
+                  <div className={`msg-menu ${m.user_id === user.id ? 'from-out' : 'from-in'}`} onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => hideMsg(m.id)}>🗑️ Apagar pra mim</button>
                     {canDeleteAll(m) && <button onClick={() => deleteMsg(m.id)}>❌ Apagar pra todos</button>}
                     <button onClick={() => copyMsg(m)}>📋 Copiar</button>
