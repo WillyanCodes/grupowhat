@@ -561,11 +561,13 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
               setCallCount(count || 0);
             };
             load();
+            // realtime + polling de segurança (4s) — nunca precisa de F5
+            const iv = setInterval(load, 4000);
             const ch = supabase.channel(`call-presence-count:${group.id}`)
               .on('postgres_changes', { event: '*', schema: 'public', table: 'call_presence', filter: `group_id=eq.${group.id}` },
                 () => load())
               .subscribe();
-            return () => { supabase.removeChannel(ch); };
+            return () => { clearInterval(iv); supabase.removeChannel(ch); };
           }, [group.id]);
 
     // screenshot deterrent: detect PrintScreen key + visibility change
@@ -1030,13 +1032,14 @@ function CallOverlay({ kind, group, user, onEnd }) {
       } catch (err) { console.error(err); }
     }).subscribe();
 
-    // lista de quem está na chamada via tabela (realtime)
+    // lista de quem está na chamada via tabela (realtime + polling 4s)
     const loadPeers = async () => {
       const { data } = await supabase.from('call_presence')
         .select('user_id, name').eq('group_id', group.id);
       setPeers(data || []);
     };
     loadPeers();
+    const iv = setInterval(loadPeers, 4000);
     const ch2 = supabase.channel(`call-presence:${group.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'call_presence', filter: `group_id=eq.${group.id}` },
         () => loadPeers())
@@ -1060,6 +1063,7 @@ function CallOverlay({ kind, group, user, onEnd }) {
 
     return () => {
       clearTimeout(t);
+      clearInterval(iv);
       pc.close(); ch.unsubscribe(); ch2.unsubscribe();
       supabase.rpc('leave_call', { gid: group.id }).then(() => {}, () => {});
       supabase.rpc('set_call_state', { gid: group.id, p_active: false, p_kind: null }).then(() => {}, () => {});
