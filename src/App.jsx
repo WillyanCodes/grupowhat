@@ -338,6 +338,7 @@ function Main({ user, profile, setProfile }) {
           groups={groups} active={active}
           setActive={(g) => { setActive(g); setMobileView('chat'); }}
           admin={admin} user={user} profile={profile}
+          notifs={notifs} onNotifs={() => setShowNotifs(true)}
           onNew={() => setShowCreate(true)}
           onJoin={() => setShowJoin(true)}
           onSettings={() => setShowSettings(true)}
@@ -382,7 +383,7 @@ function EmptyChat() {
 }
 
 /* ============ SIDEBAR ============ */
-function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoin, onSettings }) {
+function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNotifs, onNew, onJoin, onSettings }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState('');
   const filtered = groups.filter((g) =>
@@ -393,8 +394,8 @@ function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoi
         <div className="logo">💬 GrupoWhat</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
           {admin && <>
-            <span className="crown" title="Admin">👑</span>
-            <div className="notif-wrap" onClick={() => setShowNotifs(true)}>
+                      <span className="crown" title="Admin">👑</span>
+                      <div className="notif-wrap" onClick={onNotifs}>...
               <span className={`notif-bell ${notifs.length ? 'has' : ''}`}>🔔</span>
               {notifs.length > 0 && <span className="notif-badge">{notifs.length}</span>}
             </div>
