@@ -253,7 +253,7 @@ input, textarea { font-family: inherit; }
 .btn.ok { color: var(--accent2); border-color: var(--accent2); }
 .btn.ok:hover { background: color-mix(in srgb, var(--accent2) 12%, transparent); }
 .member-actions { display: flex; gap: 6px; }
-.member-call-perm { margin-left: auto; }
+.member-call-perm { margin-left: auto; display: flex; gap: 6px; }
 .perm-btn { font-size: 12px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
 .perm-btn.on { background: rgba(34,197,94,.15); color: #22c55e; border-color: rgba(34,197,94,.4); }
 .call-card { border: 1px solid rgba(34,197,94,.35); }

@@ -632,6 +632,13 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     if (gptBusy) return; // evita resposta duplicada
     const text = (msg.content || '').toLowerCase();
     if (!text.includes('@gpt')) return;
+    // bloqueio por pessoa: autor pode usar o bot?
+    const { data: authorPerm } = await supabase.from('group_members')
+      .select('can_gpt').eq('group_id', group.id).eq('user_id', msg.user_id).maybeSingle();
+    if (authorPerm && authorPerm.can_gpt === false) {
+      toast('🧠 O criador bloqueou o GPT pra você');
+      return;
+    }
     setGptBusy(true);
     // bot "digitando" enquanto responde
     supabase.rpc('set_typing', { gid: group.id, p_user: '00000000-0000-0000-0000-000000000000', p_name: '🤖 GPT' })
@@ -1296,8 +1303,8 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
   useEffect(() => { load(); }, []);
   const load = async () => {
     const { data } = await supabase.from('group_members')
-      .select('user_id, status, joined_at, can_call').eq('group_id', group.id);
-    setMembers((data || []).map((m) => ({ ...m, can_call: m.can_call !== false })));
+      .select('user_id, status, joined_at, can_call, can_gpt').eq('group_id', group.id);
+    setMembers((data || []).map((m) => ({ ...m, can_call: m.can_call !== false, can_gpt: m.can_gpt !== false })));
   };
 
   const kick = async (uid) => {
@@ -1421,7 +1428,7 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
                 </div>
               </div>
               {isOwner && m.user_id !== user.id && m.status === 'approved' && (
-                <div className="member-call-perm" title="Permitir que esta pessoa inicie chamadas">
+                <div className="member-call-perm" title="Permissões deste membro">
                   <button
                     className={`perm-btn ${m.can_call ? 'on' : ''}`}
                     onClick={async () => {
@@ -1430,6 +1437,14 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
                       toast(m.can_call ? '📵 Chamadas bloqueadas pra este membro' : '📞 Este membro pode iniciar chamadas');
                     }}
                   >📞 {m.can_call ? 'Permitido' : 'Bloqueado'}</button>
+                  <button
+                    className={`perm-btn ${m.can_gpt ? 'on' : ''}`}
+                    onClick={async () => {
+                      await supabase.rpc('set_gpt_permission', { gid: group.id, uid: m.user_id, p_can: !m.can_gpt });
+                      await load();
+                      toast(m.can_gpt ? '🧠 GPT bloqueado pra este membro' : '🧠 Este membro pode usar o GPT');
+                    }}
+                  >🧠 {m.can_gpt ? 'Permitido' : 'Bloqueado'}</button>
                 </div>
               )}
               {isOwner && m.user_id !== user.id && (
