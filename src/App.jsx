@@ -71,6 +71,26 @@ function AudioMsg({ src }) {
   );
 }
 
+function SystemCard({ m, isOwner, onDecide }) {
+  if (m.system_type === 'join_request') {
+    return (
+      <div className="sys-card">
+        <div className="sys-text">🔔 {m.author_name || 'Alguém'} quer entrar no grupo</div>
+        {isOwner && (
+          <div className="sys-actions">
+            <button className="btn ghost ok" onClick={() => onDecide(m.target_user_id, true)}>✓ Permitir</button>
+            <button className="btn ghost danger" onClick={() => onDecide(m.target_user_id, false)}>✕ Recusar</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (m.system_type === 'member_joined') {
+    return <div className="sys-card">👋 {m.author_name || 'Novo membro'} entrou no grupo</div>;
+  }
+  return null;
+}
+
 function Avatar({ name, url, size = 40, round = true }) {
   const hue = hashHue(name || '?');
   if (url) {
@@ -629,6 +649,26 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   };
   const closeOneView = () => setOneView(null);
 
+  const decideJoin = async (mid, uid, ok) => {
+    try {
+      if (ok) {
+        await supabase.rpc('approve_member', { gid: group.id, uid });
+        // aviso de novo membro no grupo (mensagem de sistema visível pra todos)
+        const p = profile || user.email?.split('@')[0];
+        await supabase.from('messages').insert({
+          group_id: group.id, user_id: user.id, kind: 'system', system_type: 'member_joined',
+          content: 'Novo membro entrou', author_name: p, target_user_id: uid,
+        });
+        toast('Membro aprovado ✔');
+      } else {
+        await supabase.rpc('reject_member', { gid: group.id, uid });
+        toast('Pedido recusado');
+      }
+      // SOMA a notificação (aprovou ou recusou) — não fica com botões
+      setMessages((ms) => ms.filter((m) => m.id !== mid));
+    } catch (err) { console.error(err); toast('Erro na decisão', true); }
+  };
+
   const replyTo = (m) => {
     setReplying(m);
     setMenuMsg(null);
@@ -693,6 +733,15 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         {visible.map((m, i) => {
           const prev = visible[i - 1];
           const showDay = !prev || fmtDay(m.created_at) !== fmtDay(prev.created_at);
+          if (m.system_type) {
+            return (
+              <React.Fragment key={m.id}>
+                {showDay && <div className="day-divider">{fmtDay(m.created_at)}</div>}
+                <SystemCard m={m} isOwner={group.owner_id === user.id}
+                  onDecide={(uid, ok) => decideJoin(m.id, uid, ok)} />
+              </React.Fragment>
+            );
+          }
           return (
             <React.Fragment key={m.id}>
               {showDay && <div className="day-divider">{fmtDay(m.created_at)}</div>}
