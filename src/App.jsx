@@ -1,19 +1,27 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { Component, useEffect, useRef, useState } from 'react';
 import { supabase, isAdmin } from './supabase.js';
 
 const THEMES = [
   { id: 'green', label: 'Verde', bg: '#00a884' },
-  { id: 'blue', label: 'Azul', bg: '#2c6bed' },
-  { id: 'red', label: 'Vermelho', bg: '#e73c3c' },
-  { id: 'purple', label: 'Roxo', bg: '#a88bff' },
-  { id: 'pink', label: 'Rosa', bg: '#ff8bd0' },
-  { id: 'orange', label: 'Laranja', bg: '#ff9e4d' },
+  { id: 'blue', label: 'Azul', bg: '#2979ff' },
+  { id: 'red', label: 'Vermelho', bg: '#ef4444' },
+  { id: 'purple', label: 'Roxo', bg: '#a78bfa' },
+  { id: 'pink', label: 'Rosa', bg: '#f472b6' },
+  { id: 'orange', label: 'Laranja', bg: '#fb923c' },
 ];
 
 const fmtTime = (t) => {
   if (!t) return '';
+  return new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+};
+const fmtDay = (t) => {
+  if (!t) return '';
   const d = new Date(t);
-  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const hoje = new Date();
+  if (d.toDateString() === hoje.toDateString()) return 'Hoje';
+  const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
+  if (d.toDateString() === ontem.toDateString()) return 'Ontem';
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
 const hashHue = (s) => {
@@ -22,12 +30,16 @@ const hashHue = (s) => {
   return h;
 };
 
-function Avatar({ name, size = 38 }) {
+function Avatar({ name, url, size = 40, round = true }) {
   const hue = hashHue(name || '?');
+  if (url) {
+    return <img src={url} alt="" className="avatar-img"
+      style={{ width: size, height: size, borderRadius: round ? '50%' : 14 }} />;
+  }
   return (
     <div className="avatar" style={{
-      width: size, height: size, fontSize: size * 0.42,
-      background: `linear-gradient(135deg, hsl(${hue},70%,45%), hsl(${(hue + 40) % 360},70%,35%))`,
+      width: size, height: size, fontSize: size * 0.4, borderRadius: round ? '50%' : 14,
+      background: `linear-gradient(135deg, hsl(${hue},72%,47%), hsl(${(hue + 45) % 360},72%,36%))`,
     }}>
       {(name || '?')[0].toUpperCase()}
     </div>
@@ -37,9 +49,28 @@ function Avatar({ name, size = 38 }) {
 function toast(msg, isErr = false) {
   const el = document.createElement('div');
   el.textContent = msg;
-  el.style.cssText = `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:${isErr ? '#e73c3c' : 'var(--panel2)'};color:#fff;padding:12px 20px;border-radius:12px;z-index:400;font-size:14px;font-weight:600;box-shadow:0 6px 24px rgba(0,0,0,.45)`;
+  el.style.cssText = `position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:${isErr ? '#ef4444' : '#1f2c34'};color:#fff;padding:12px 22px;border-radius:14px;z-index:500;font-size:14px;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,.45);transition:opacity .3s;max-width:90vw;text-align:center`;
   document.body.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2600);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 320); }, 2600);
+}
+
+class ErrorBoundary extends Component {
+  state = { err: null };
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { console.error('crash:', err, info); }
+  render() {
+    if (this.state.err) {
+      return (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center', background: 'var(--bg)', color: 'var(--text)' }}>
+          <div style={{ fontSize: 44 }}>😵</div>
+          <h3>Ops, algo deu errado</h3>
+          <p style={{ color: 'var(--muted)', fontSize: 13, maxWidth: 420 }}>{String(this.state.err?.message || this.state.err)}</p>
+          <button className="btn" style={{ maxWidth: 220, marginTop: 6 }} onClick={() => location.reload()}>Recarregar</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export default function App() {
@@ -60,9 +91,12 @@ export default function App() {
     return () => sub?.unsubscribe();
   }, []);
 
-  if (loading) return <div className="boot"><span className="spin" />Carregando…</div>;
-  if (!session) return <AuthScreen />;
-  return <Main key={session.user.id} user={session.user} profile={profile} setProfile={setProfile} />;
+  let body;
+  if (loading) body = <div className="boot"><span className="spin" />Carregando…</div>;
+  else if (!session) body = <AuthScreen />;
+  else body = <Main key={session.user.id} user={session.user} profile={profile} setProfile={setProfile} />;
+
+  return <ErrorBoundary>{body}</ErrorBoundary>;
 }
 
 /* ============ AUTH ============ */
@@ -84,7 +118,7 @@ function AuthScreen() {
           options: { data: { display_name: name.trim() || email.split('@')[0] } },
         });
         if (error) throw error;
-        if (!data.session) setErr('Conta criada! Confira o link de confirmação no seu email para entrar. ✉️');
+        if (!data.session) setErr('Conta criada! Confira o link no seu email para entrar. ✉️');
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (error) throw error;
@@ -105,40 +139,42 @@ function AuthScreen() {
 
   return (
     <div className="auth">
-      <div className="auth-glow" />
-      <form className="auth-card" onSubmit={doEmail}>
+      <div className="auth-bg" />
+      <div className="auth-card">
         <div className="auth-logo">💬</div>
         <h1>GrupoWhat</h1>
-        <div className="sub">Seus grupos, do seu jeito</div>
+        <div className="sub">Seus grupos, do seu jeito — grátis e sem limites</div>
         <button type="button" className="btn google" onClick={doGoogle}>
           <GLogo /> Continuar com Google
         </button>
         <div className="sep">ou</div>
-        {mode === 'register' && (
-          <input className="input" placeholder="Seu nome (escolha à vontade)"
-            value={name} onChange={(e) => setName(e.target.value)} />
-        )}
-        <input className="input" type="email" placeholder="Seu email" value={email}
-          onChange={(e) => setEmail(e.target.value)} required />
-        <input className="input" type="password" placeholder="Sua senha" value={pass}
-          onChange={(e) => setPass(e.target.value)} required minLength={6} />
-        {mode === 'register' && <div className="hint">Senha de acesso do GrupoWhat (não é a senha do Gmail).</div>}
-        <div className="err">{err}</div>
-        <button type="submit" className="btn" disabled={busy}>
-          {busy ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
-        </button>
-        <button type="button" className="btn ghost" style={{ marginTop: 10 }}
+        <form onSubmit={doEmail}>
+          {mode === 'register' && (
+            <input className="input" placeholder="Seu nome (escolha à vontade)"
+              value={name} onChange={(e) => setName(e.target.value)} />
+          )}
+          <input className="input" type="email" placeholder="Seu email" value={email}
+            onChange={(e) => setEmail(e.target.value)} required />
+          <input className="input" type="password" placeholder="Sua senha" value={pass}
+            onChange={(e) => setPass(e.target.value)} required minLength={6} />
+          {mode === 'register' && <div className="hint">Senha de acesso do GrupoWhat (não é a senha do Gmail).</div>}
+          <div className="err">{err}</div>
+          <button type="submit" className="btn" disabled={busy}>
+            {busy ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
+          </button>
+        </form>
+        <button type="button" className="btn ghost" style={{ marginTop: 12 }}
           onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr(''); }}>
           {mode === 'login' ? 'Criar conta com email' : 'Já tenho conta — entrar'}
         </button>
-      </form>
+      </div>
     </div>
   );
 }
 
 const cleanErr = (m) =>
   (m || '').includes('Invalid login') ? 'Email ou senha incorretos.'
-  : (m || '').includes('already') ? 'Este email já esta cadastrado. Faça login.'
+  : (m || '').includes('already') ? 'Este email já está cadastrado. Faça login.'
   : (m || '').replace(/^.*?\b(?:API|error)\b\s*:\s*/i, '');
 
 const GLogo = () => (
@@ -158,7 +194,7 @@ function Main({ user, profile, setProfile }) {
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showMembers, setShowMembers] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const [mobileView, setMobileView] = useState('list');
 
   useEffect(() => {
@@ -170,7 +206,7 @@ function Main({ user, profile, setProfile }) {
   const loadGroups = async () => {
     const { data: rows, error } = await supabase
       .from('group_members')
-      .select('group_id, groups!group_id(name, id, code, owner_id, locked)');
+      .select('group_id, groups!group_id(id, name, code, owner_id, locked, avatar_url, description)');
     if (error) { console.error(error); toast('Erro ao carregar grupos', true); return; }
     const list = [];
     (rows || []).forEach((r) => {
@@ -179,13 +215,14 @@ function Main({ user, profile, setProfile }) {
     });
     list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     setGroups(list);
+    setActive((cur) => cur ? list.find((g) => g.id === cur.id) || null : null);
   };
 
   const joinGroup = async (code) => {
     const num = parseInt(code, 10);
     if (!Number.isInteger(num)) return { err: 'Número inválido.' };
     const { data: gid, error } = await supabase.rpc('join_by_code', { p_code: num });
-    if (error) return { err: 'Erro. Confira o número e tente de novo.' };
+    if (error) { console.error(error); return { err: 'Erro. Confira o número e tente de novo.' }; }
     if (!gid) return { err: 'Grupo não encontrado. Confira o número?' };
     toast('Você entrou no grupo! 🎉');
     await loadGroups();
@@ -227,9 +264,9 @@ function Main({ user, profile, setProfile }) {
         />
         <div className="chat-main">
           {active
-            ? <ChatView key={active.id} group={active} user={user} admin={admin} profile={profile}
+            ? <ChatView key={active.id} group={active} user={user} profile={profile}
                 onBack={() => setMobileView('list')}
-                onMembers={() => setShowMembers(true)}
+                onInfo={() => setShowInfo(true)}
                 onLeft={async () => { await leaveOrDelete(active.id); }} />
             : <EmptyChat />}
         </div>
@@ -239,8 +276,9 @@ function Main({ user, profile, setProfile }) {
       {showJoin && <JoinModal onClose={() => setShowJoin(false)} onJoin={joinGroup} />}
       {showSettings && <SettingsModal user={user} profile={profile} setProfile={setProfile}
         onClose={() => setShowSettings(false)} />}
-      {showMembers && active &&
-        <MembersModal group={active} user={user} admin={admin} onClose={() => setShowMembers(false)} onChanged={loadGroups} />}
+      {showInfo && active &&
+        <GroupInfoModal group={active} user={user} admin={admin} onClose={() => setShowInfo(false)}
+          onChanged={loadGroups} />}
     </div>
   );
 }
@@ -258,12 +296,15 @@ function EmptyChat() {
 /* ============ SIDEBAR ============ */
 function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoin, onSettings }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const filtered = groups.filter((g) =>
+    (g.name || '').toLowerCase().includes(search.toLowerCase()));
   return (
     <div className="sidebar">
       <header>
         <div className="logo">💬 GrupoWhat</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
-          {admin && <span className="crown">👑</span>}
+          {admin && <span className="crown" title="Admin">👑</span>}
           <div className="avatar-wrap" onClick={() => setMenuOpen((v) => !v)}>
             <Avatar name={profile || user.email} size={36} />
           </div>
@@ -271,7 +312,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoi
             <div className="menu-pop">
               <div className="menu-email">{user.email}</div>
               <div className="menu-name">{(profile || 'Você') + (admin ? ' · 👑 Admin' : '')}</div>
-              <button className="btn ghost" onClick={() => { setMenuOpen(false); onSettings(); }}>⚙️ Aparência</button>
+              <button className="btn ghost" onClick={() => { setMenuOpen(false); onSettings(); }}>🎨 Aparência</button>
               <button className="btn ghost" onClick={async () => { setMenuOpen(false); await supabase.auth.signOut(); }}>🚪 Sair</button>
             </div>
           )}
@@ -281,17 +322,21 @@ function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoi
         <button className="btn" onClick={onJoin}>🔢 Entrar com nº</button>
         <button className="btn ghost" onClick={onNew}>➕ Novo grupo</button>
       </div>
+      <div className="search-bar">
+        <span>🔍</span>
+        <input placeholder="Pesquisar grupos…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
       <div className="groups">
-        {groups.length === 0 && (
+        {filtered.length === 0 && (
           <div className="side-empty">
-            <span>Você ainda não está em nenhum grupo.</span>
-            {!admin && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Peça o número de um grupo pra alguém entrar.</span>}
+            <span>{search ? 'Nenhum grupo encontrado.' : 'Você ainda não está em nenhum grupo.'}</span>
+            {!search && !admin && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Peça o número de um grupo pra alguém entrar.</span>}
           </div>
         )}
-        {groups.map((g) => (
+        {filtered.map((g) => (
           <div key={g.id} className={`group-item ${active?.id === g.id ? 'active' : ''}`}
             onClick={() => setActive(g)}>
-            <Avatar name={g.name} />
+            <Avatar name={g.name} url={g.avatar_url} />
             <div className="col">
               <div className="gp-name">{g.name}</div>
               <div className="gp-meta">{g.owner_id === user.id ? '👑 Seu grupo' : 'Grupo'}</div>
@@ -304,15 +349,24 @@ function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoi
 }
 
 /* ============ CHAT ============ */
-function ChatView({ group, user, profile, onBack, onMembers, onLeft }) {
+function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [call, setCall] = useState(null);
+  const [hidden, setHidden] = useState(() => new Set());
+  const [viewed, setViewed] = useState(() => new Map());
+  const [menuMsg, setMenuMsg] = useState(null);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const [recTime, setRecTime] = useState(0);
   const messagesEnd = useRef(null);
   const fileRef = useRef(null);
+  const recRef = useRef(null);
+  const recTimer = useRef(null);
 
   useEffect(() => {
     fetchMessages();
+    fetchEvents();
     const sub = supabase
       .channel(`msg:${group.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages',
@@ -327,7 +381,7 @@ function ChatView({ group, user, profile, onBack, onMembers, onLeft }) {
 
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, hidden]);
 
   const fetchMessages = async () => {
     const { data, error } = await supabase
@@ -337,21 +391,46 @@ function ChatView({ group, user, profile, onBack, onMembers, onLeft }) {
     setMessages(data || []);
   };
 
+  const fetchEvents = async () => {
+    const { data, error } = await supabase.from('message_events').select('message_id, kind');
+    if (error || !data) return;
+    const h = new Set();
+    const v = new Map();
+    data.forEach((e) => {
+      if (e.kind === 'hidden') h.add(e.message_id);
+      if (e.kind === 'viewed') v.set(e.message_id, (v.get(e.message_id) || 0) + 1);
+    });
+    setHidden(h);
+    setViewed(v);
+  };
+
+  const insertMsg = async (payload) => {
+    const { error } = await supabase.from('messages').insert(payload);
+    if (error) { console.error(error); toast('Erro ao enviar mensagem', true); return false; }
+    return true;
+  };
+
   const send = async (e) => {
     e?.preventDefault();
     const body = text.trim();
     if (!body) return;
     setText('');
-    const { error } = await supabase.from('messages').insert({
+    await insertMsg({
       group_id: group.id, user_id: user.id, content: body, kind: 'text',
       author_name: profile || user.email?.split('@')[0],
     });
-    if (error) { console.error(error); toast('Erro ao enviar mensagem', true); }
   };
 
-  const onFile = async (e) => {
+  const onPickFile = (e) => {
     const f = e.target.files?.[0];
     e.target.value = '';
+    if (!f) return;
+    setPendingFile(f);
+  };
+
+  const sendFile = async (oneView) => {
+    const f = pendingFile;
+    setPendingFile(null);
     if (!f) return;
     const kind = f.type.startsWith('image/') ? 'image'
       : f.type.startsWith('video/') ? 'video'
@@ -361,21 +440,86 @@ function ChatView({ group, user, profile, onBack, onMembers, onLeft }) {
     const { error } = await supabase.storage.from('media').upload(path, f);
     if (error) { console.error(error); toast('Falha no upload', true); return; }
     const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
-    await supabase.from('messages').insert({
+    await insertMsg({
       group_id: group.id, user_id: user.id, kind, media_url: url,
-      author_name: profile || user.email?.split('@')[0],
+      one_view: !!oneView, author_name: profile || user.email?.split('@')[0],
     });
     toast('Enviado ✔');
   };
+
+  /* ===== gravação de áudio ===== */
+  const startRec = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const chunks = [];
+      rec.ondataavailable = (ev) => { if (ev.data.size) chunks.push(ev.data); };
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (!chunks.length) return;
+        const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+        const ext = (rec.mimeType || '').includes('mp4') ? 'm4a' : 'webm';
+        const path = `${group.id}/${Date.now()}_audio.${ext}`;
+        const { error } = await supabase.storage.from('media').upload(path, blob);
+        if (error) { console.error(error); toast('Falha no áudio', true); return; }
+        const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+        await insertMsg({
+          group_id: group.id, user_id: user.id, kind: 'audio', media_url: url,
+          author_name: profile || user.email?.split('@')[0],
+        });
+        toast('Áudio enviado ✔');
+      };
+      recRef.current = rec;
+      rec.start();
+      setRecording(true);
+      setRecTime(0);
+      recTimer.current = setInterval(() => setRecTime((t) => t + 1), 1000);
+    } catch (err) {
+      console.error(err);
+      toast('Não consegui acessar o microfone', true);
+    }
+  };
+  const stopRec = () => {
+    clearInterval(recTimer.current);
+    setRecording(false);
+    try { recRef.current?.stop(); } catch (_) {}
+  };
+
+  const hideMsg = async (id) => {
+    await supabase.rpc('hide_msg', { mid: id });
+    setHidden((h) => new Set(h).add(id));
+    setMenuMsg(null);
+  };
+  const deleteMsg = async (id) => {
+    if (!confirm('Apagar para todos?')) return;
+    await supabase.rpc('delete_msg', { mid: id });
+    setMessages((ms) => ms.filter((m) => m.id !== id));
+    setMenuMsg(null);
+  };
+  const viewOne = async (id) => {
+    await supabase.rpc('view_msg', { mid: id });
+    setViewed((v) => new Map(v).set(id, (v.get(id) || 0) + 1));
+    setHidden((h) => new Set(h).add(id));
+  };
+
+  const visible = messages.filter((m) => !(m.one_view && m.user_id !== user.id && hidden.has(m.id)));
+  const canDeleteAll = (m) => m.user_id === user.id;
 
   return (
     <>
       <div className="chat-header">
         <button className="icon-btn" onClick={onBack}>←</button>
-        <Avatar name={group.name} size={38} />
-        <div className="gp-info" onClick={onMembers}>
+        <div className="gp-avatar" onClick={onInfo}>
+          <Avatar name={group.name} url={group.avatar_url} size={42} />
+        </div>
+        <div className="gp-info" onClick={onInfo}>
           <h3>{group.name}</h3>
-          <div className="cnt">{group.owner_id === user.id ? '👑 Seu grupo · toque p/ membros' : 'Toque p/ ver membros'}</div>
+          <div className="cnt">
+            {group.description ? group.description.slice(0, 40) : (group.owner_id === user.id ? '👑 Seu grupo' : 'Grupo')}
+            {group.description && '…'} · toque p/ detalhes
+          </div>
         </div>
         <button className="icon-btn" title="Chamada de voz" onClick={() => setCall('voice')}>📞</button>
         <button className="icon-btn" title="Chamada de vídeo" onClick={() => setCall('video')}>📹</button>
@@ -385,33 +529,109 @@ function ChatView({ group, user, profile, onBack, onMembers, onLeft }) {
       </div>
 
       <div className="messages">
-        {messages.map((m) => (
-          <div key={m.id} className={`msg ${m.user_id === user.id ? 'out' : 'in'}`}>
-            {m.user_id !== user.id && <div className="author">{m.author_name || 'Alguém'}</div>}
-            {m.kind === 'image' && <span className="media-space"><img src={m.media_url} alt="" onClick={() => window.open(m.media_url, '_blank')} /></span>}
-            {m.kind === 'video' && <span className="media-space"><video src={m.media_url} controls /></span>}
-            {m.kind === 'audio' && <span className="media-space"><audio src={m.media_url} controls /></span>}
-            {m.kind === 'file' && (
-              <div className="body"><a href={m.media_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent2)' }}>📎 Arquivo</a></div>
-            )}
-            {m.content && <div className="body">{m.content}</div>}
-            <span className="time">{fmtTime(m.created_at)}{m.user_id === user.id ? ' ✓✓' : ''}</span>
-          </div>
-        ))}
+        {visible.map((m, i) => {
+          const prev = visible[i - 1];
+          const showDay = !prev || fmtDay(m.created_at) !== fmtDay(prev.created_at);
+          return (
+            <React.Fragment key={m.id}>
+              {showDay && <div className="day-divider">{fmtDay(m.created_at)}</div>}
+              <div className={`msg ${m.user_id === user.id ? 'out' : 'in'}`}>
+                {m.user_id !== user.id && <div className="author">{m.author_name || 'Alguém'}</div>}
+                {m.one_view && m.user_id === user.id && (
+                  <div className="one-badge">🕐 Visualização única{viewed.has(m.id) ? ' · vista' : ''}</div>
+                )}
+                {m.kind === 'image' && (
+                  <span className="media-space">
+                    {m.one_view && m.user_id !== user.id
+                      ? <div className="one-view-box" onClick={() => viewOne(m.id)}>
+                          <img src={m.media_url} alt="" />
+                          <div className="one-overlay">🕐 Visualização única<br />toque para ver</div>
+                        </div>
+                      : <img src={m.media_url} alt="" onClick={() => window.open(m.media_url, '_blank')} />}
+                  </span>
+                )}
+                {m.kind === 'video' && (
+                  <span className="media-space">
+                    {m.one_view && m.user_id !== user.id
+                      ? <div className="one-view-box" onClick={() => viewOne(m.id)}>
+                          <video src={m.media_url} muted preload="metadata" />
+                          <div className="one-overlay">🕐 Visualização única<br />toque para ver</div>
+                        </div>
+                      : <video src={m.media_url} controls />}
+                  </span>
+                )}
+                {m.kind === 'audio' && <span className="media-space"><audio src={m.media_url} controls /></span>}
+                {m.kind === 'file' && (
+                  <div className="body"><a href={m.media_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent2)' }}>📎 Arquivo</a></div>
+                )}
+                {m.content && <div className="body">{m.content}</div>}
+                <span className="time">
+                  {fmtTime(m.created_at)}
+                  {m.user_id === user.id ? ' ✓✓' : ''}
+                </span>
+                <button className="msg-menu-btn" onClick={() => setMenuMsg(menuMsg === m.id ? null : m.id)}>⋮</button>
+                {menuMsg === m.id && (
+                  <div className="msg-menu" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => hideMsg(m.id)}>🗑️ Apagar pra mim</button>
+                    {canDeleteAll(m) && <button onClick={() => deleteMsg(m.id)}>❌ Apagar pra todos</button>}
+                  </div>
+                )}
+              </div>
+            </React.Fragment>
+          );
+        })}
         <div ref={messagesEnd} />
       </div>
 
+      {recording && (
+        <div className="rec-bar">
+          <span className="rec-dot" /> Gravando… {recTime}s
+          <button className="btn" style={{ width: 'auto', margin: 0, padding: '8px 14px' }} onClick={stopRec}>Enviar</button>
+        </div>
+      )}
+
       <form className="inputbar" onSubmit={send}>
-        <input ref={fileRef} type="file" hidden accept="image/*,video/*,audio/*" onChange={onFile} />
+        <input ref={fileRef} type="file" hidden accept="image/*,video/*,audio/*" onChange={onPickFile} />
         <button type="button" className="atc" onClick={() => fileRef.current?.click()}>📎</button>
+        {!recording && <button type="button" className="atc rec-btn" onClick={startRec}>🎤</button>}
         <textarea rows={1} placeholder="Mensagem" value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
         <button type="submit" className="snd" disabled={!text.trim()}>➤</button>
       </form>
 
+      {pendingFile && (
+        <MediaModal file={pendingFile} onCancel={() => setPendingFile(null)} onSend={sendFile} />
+      )}
+
       {call && <CallOverlay kind={call} group={group} onEnd={() => setCall(null)} />}
     </>
+  );
+}
+
+function MediaModal({ file, onCancel, onSend }) {
+  const [one, setOne] = useState(false);
+  const url = URL.createObjectURL(file);
+  const isImg = file.type.startsWith('image/');
+  const isVid = file.type.startsWith('video/');
+  return (
+    <div className="modal-back" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-icon">📎</div>
+        <h3>Enviar mídia</h3>
+        {isImg && <img src={url} alt="" className="media-preview" />}
+        {isVid && <video src={url} controls className="media-preview" />}
+        {!isImg && !isVid && <div className="media-preview file-preview">📄 {file.name}</div>}
+        <label className="lock-row" style={{ marginTop: 10 }}>
+          <input type="checkbox" checked={one} onChange={(e) => setOne(e.target.checked)} />
+          🕐 Visualização única (some ao ser vista)
+        </label>
+        <div className="actions">
+          <button className="btn ghost" onClick={onCancel}>Cancelar</button>
+          <button className="btn" onClick={() => onSend(one ? true : null)}>Enviar</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -472,7 +692,13 @@ function CallOverlay({ kind, group, onEnd }) {
 
   return (
     <div className="call-overlay">
-      <Avatar name={group.name} size={84} />
+      {kind === 'video' && (
+        <div className="call-vid">
+          <video id="remote-media" autoPlay playsInline />
+          <video id="local-media" autoPlay playsInline muted className="local-vid" />
+        </div>
+      )}
+      <Avatar name={group.name} url={group.avatar_url} size={kind === 'video' ? 72 : 88} />
       <h2>{group.name}</h2>
       <div className="status">{status} — {kind === 'voice' ? '📞 voz' : '📹 vídeo'}</div>
       <div className="callbar">
@@ -510,9 +736,7 @@ function CreateModal({ admin, onClose, onCreate }) {
           <h3>Grupo criado!</h3>
           <div className="muted">Este é o <b>número secreto</b> do seu grupo. <b>Só você vê</b> — compartilhe com quem quiser que entre:</div>
           <div className="code-big">{created.code}</div>
-          <div className="actions">
-            <button className="btn" onClick={onClose}>Fechar</button>
-          </div>
+          <div className="actions"><button className="btn" onClick={onClose}>Fechar</button></div>
         </div>
       </div>
     );
@@ -573,16 +797,22 @@ function JoinModal({ onClose, onJoin }) {
   );
 }
 
-function MembersModal({ group, user, admin, onClose, onChanged }) {
+function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
   const [members, setMembers] = useState([]);
   const [lock, setLock] = useState(!!group.locked);
+  const [name, setName] = useState(group.name);
+  const [desc, setDesc] = useState(group.description || '');
+  const [avatarUrl, setAvatarUrl] = useState(group.avatar_url || '');
+  const isOwner = admin && group.owner_id === user.id;
+  const fileRef = useRef(null);
+
   useEffect(() => { load(); }, []);
   const load = async () => {
     const { data } = await supabase.from('group_members')
       .select('user_id').eq('group_id', group.id);
     setMembers(data || []);
   };
-  const isOwner = admin && group.owner_id === user.id;
+
   const kick = async (uid) => {
     if (uid === user.id) return;
     await supabase.rpc('remove_member', { gid: group.id, uid });
@@ -595,27 +825,68 @@ function MembersModal({ group, user, admin, onClose, onChanged }) {
     await supabase.from('groups').update({ locked: nl }).eq('id', group.id);
     toast(nl ? '🔒 Só você pode enviar mensagem agora' : '🔓 Todos podem enviar mensagem');
   };
+  const saveInfo = async () => {
+    await supabase.from('groups').update({ name: name.trim() || group.name, description: desc.trim() })
+      .eq('id', group.id);
+    toast('Informações salvas ✔');
+    onChanged();
+  };
+  const uploadAvatar = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    const path = `avatars/${group.id}_${Date.now()}.${f.name.split('.').pop() || 'jpg'}`;
+    const { error } = await supabase.storage.from('media').upload(path, f);
+    if (error) { toast('Falha na foto', true); return; }
+    const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+    await supabase.from('groups').update({ avatar_url: url }).eq('id', group.id);
+    setAvatarUrl(url);
+    onChanged();
+    toast('Foto atualizada ✔');
+  };
+
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>👥 Membros — {group.name}</h3>
-        <div className="muted">
-          {isOwner ? (
-            <>Você é o 👑 criador. Número do grupo: <b>{group.code}</b> — compartilhe só com quem deve entrar.</>
-          ) : (
-            <>Número do grupo: <b>{group.code}</b></>
+        <div className="gi-head">
+          <Avatar name={name} url={avatarUrl} size={64} />
+          {isOwner && (
+            <div className="gi-edit-avatar">
+              <input ref={fileRef} type="file" hidden accept="image/*" onChange={uploadAvatar} />
+              <button className="btn ghost" style={{ margin: 0, padding: '8px 10px' }} onClick={() => fileRef.current?.click()}>📷 Foto</button>
+            </div>
           )}
+          <h3>{name}</h3>
+          <div className="muted">{isOwner ? 'Você é o 👑 criador' : 'Grupo'}</div>
         </div>
+
         {isOwner && (
-          <label className="lock-row">
-            <input type="checkbox" checked={lock} onChange={toggleLock} />
-            🔒 Somente o criador pode enviar mensagem
-          </label>
+          <>
+            <div className="muted" style={{ marginTop: 8 }}>Nome</div>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
+            <div className="muted">Descrição</div>
+            <textarea className="input" rows={2} placeholder="Descrição do grupo…" value={desc}
+              onChange={(e) => setDesc(e.target.value)} maxLength={120} />
+            <button className="btn" style={{ marginTop: 0 }} onClick={saveInfo}>Salvar informações</button>
+            <label className="lock-row" style={{ marginTop: 10 }}>
+              <input type="checkbox" checked={lock} onChange={toggleLock} />
+              🔒 Somente o criador pode enviar mensagem
+            </label>
+          </>
         )}
+
+        {isOwner && (
+          <div className="muted" style={{ marginTop: 6 }}>
+            Número secreto do grupo: <b>{group.code}</b> — compartilhe só com quem deve entrar.
+          </div>
+        )}
+        {!isOwner && <div className="muted" style={{ marginTop: 6 }}>Código do grupo: visível apenas para o criador.</div>}
+
+        <div className="muted" style={{ marginTop: 12 }}>Membros ({members.length})</div>
         <div className="member-list">
           {members.map((m) => (
             <div key={m.user_id} className="member-item">
-              <Avatar name={m.user_id === user.id ? 'Você' : '👤'} size={34} />
+              <Avatar name={m.user_id === user.id ? 'Você' : (m.user_id === group.owner_id ? 'Criador' : 'Membro')} size={34} />
               <div className="col">
                 <div className="gp-name" style={{ fontSize: 14 }}>
                   {m.user_id === user.id ? 'Você' : (m.user_id === group.owner_id ? 'Criador' : 'Membro')}
@@ -635,33 +906,41 @@ function MembersModal({ group, user, admin, onClose, onChanged }) {
 }
 
 function SettingsModal({ user, profile, setProfile, onClose }) {
-  const [theme, setTheme] = useState(localStorage.getItem('gw_theme') || 'green');
-  const [mode, setMode] = useState(localStorage.getItem('gw_mode') || 'dark');
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('gw_theme') || 'green'; } catch (_) { return 'green'; } });
+  const [mode, setMode] = useState(() => { try { return localStorage.getItem('gw_mode') || 'dark'; } catch (_) { return 'dark'; } });
   const [name, setName] = useState(profile || '');
 
   const apply = (th, md) => {
-    document.body.classList.remove('light', ...THEMES.map((t) => 'theme-' + t.id));
-    document.body.classList.add(md === 'light' ? 'light' : '', 'theme-' + th);
-    localStorage.setItem('gw_theme', th);
-    localStorage.setItem('gw_mode', md);
+    try {
+      document.body.classList.remove('light', ...THEMES.map((t) => 'theme-' + t.id));
+      document.body.classList.add(md === 'light' ? 'light' : '', 'theme-' + th);
+      localStorage.setItem('gw_theme', th);
+      localStorage.setItem('gw_mode', md);
+    } catch (err) { console.error(err); }
   };
 
-  useEffect(() => { apply(theme, mode); }, []);
+  useEffect(() => {
+    apply(theme, mode);
+    return () => {};
+  }, []);
 
   const saveName = async () => {
-    if (name.trim()) {
-      await supabase.auth.updateUser({ data: { display_name: name.trim() } });
-      setProfile(name.trim());
-      toast('Nome salvo ✔');
-    }
+    try {
+      if (name.trim()) {
+        await supabase.auth.updateUser({ data: { display_name: name.trim() } });
+        setProfile(name.trim());
+        toast('Nome salvo ✔');
+      }
+    } catch (err) { console.error(err); }
     onClose();
   };
 
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>⚙️ Aparência</h3>
-        <div className="muted">Cor de destaque</div>
+        <div className="modal-icon">🎨</div>
+        <h3>Aparência</h3>
+        <div className="muted">Cor de destaque do app</div>
         <div className="theme-grid">
           {THEMES.map((t) => (
             <button key={t.id} className={`theme-swatch theme-${t.id} ${theme === t.id ? 'active' : ''}`}
