@@ -408,7 +408,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoi
 
 /* ============ CHAT ============ */
 function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
-  const pending = group.member_status === 'pending';
+  const pending = group.member_status !== 'approved';
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [call, setCall] = useState(null);
