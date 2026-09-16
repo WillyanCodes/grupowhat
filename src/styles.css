@@ -302,6 +302,13 @@ input, textarea { font-family: inherit; }
 .no-screenshot * { pointer-events: none; }
 .no-screenshot img, .no-screenshot video { -webkit-user-drag: none; user-select: none; }
 
+/* Reply bar */
+.reply-bar { display: flex; align-items: center; gap: 8px; background: var(--panel2); border-top: 1px solid var(--border); padding: 8px 12px; }
+.reply-close { background: transparent; border: none; color: var(--muted); font-size: 16px; padding: 4px; cursor: pointer; }
+.reply-content { flex: 1; background: var(--input); border-radius: 8px; padding: 8px 10px; min-height: 36px; }
+.reply-author { font-weight: 700; font-size: 12px; color: var(--accent2); display: block; margin-bottom: 2px; }
+.reply-text { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; display: block; }
+
 @media (max-width: 820px) {
   .sidebar { max-width: 100%; }
   .layout.mobile-chat .sidebar { display: none; }

@@ -420,6 +420,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     const [recTime, setRecTime] = useState(0);
     const [oneView, setOneView] = useState(null);
     const [shotWarned, setShotWarned] = useState(false);
+    const [replying, setReplying] = useState(null); // msg que está sendo respondida
     const messagesEnd = useRef(null);
 
     // screenshot deterrent: detect PrintScreen key + visibility change
@@ -494,7 +495,9 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     await insertMsg({
       group_id: group.id, user_id: user.id, content: body, kind: 'text',
       author_name: profile || user.email?.split('@')[0],
+      reply_to: replying?.id || null,
     });
+    setReplying(null);
   };
 
   const onPickFile = (e) => {
@@ -583,9 +586,10 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   const closeOneView = () => setOneView(null);
 
   const replyTo = (m) => {
-    setText(`↩️ ${(m.author_name || 'Alguém')}: ${m.content ? m.content.slice(0, 80) : (m.kind === 'image' ? '[Imagem]' : m.kind === 'audio' ? '[Áudio]' : m.kind === 'video' ? '[Vídeo]' : '[Mídia]')}\n`);
+    setReplying(m);
     setMenuMsg(null);
   };
+  const cancelReply = () => setReplying(null);
   const forwardMsg = async (m) => {
     const target = prompt('Encaminhar para qual grupo? Digite o nome:', '');
     if (!target) return;
@@ -703,6 +707,22 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         <div className="rec-bar">
           <span className="rec-dot" /> Gravando… {recTime}s
           <button className="btn" style={{ width: 'auto', margin: 0, padding: '8px 14px' }} onClick={stopRec}>Enviar</button>
+        </div>
+      )}
+
+      {replying && (
+        <div className="reply-bar">
+          <button className="reply-close" onClick={cancelReply} title="Cancelar">✕</button>
+          <div className="reply-content">
+            <span className="reply-author">{replying.author_name || 'Alguém'}</span>
+            <span className="reply-text">
+              {replying.kind === 'text' ? replying.content
+               : replying.kind === 'image' ? '📷 Foto'
+               : replying.kind === 'video' ? '🎥 Vídeo'
+               : replying.kind === 'audio' ? '🎤 Áudio'
+               : '📎 Arquivo'}
+            </span>
+          </div>
         </div>
       )}
 
