@@ -772,7 +772,12 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         if (payload.new.user_id !== '00000000-0000-0000-0000-000000000000') askGpt(payload.new);
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages',
-        filter: `group_id=eq.${group.id}` }, () => fetchMessages())
+        filter: `group_id=eq.${group.id}` }, (payload) => {
+          // remove direto pelo id (funciona mesmo se o evento só trouxer a PK)
+          const delId = payload.old?.id || payload.old?.message_id;
+          if (delId) setMessages((ms) => ms.filter((m) => m.id !== delId));
+          else fetchMessages();
+        })
       .subscribe();
     return () => supabase.removeChannel(sub);
   }, [group.id, pending]);
