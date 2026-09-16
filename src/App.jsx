@@ -1005,7 +1005,7 @@ function CallOverlay({ kind, group, user, onEnd }) {
     supabase.from('groups').update({ call_active: true, last_call_kind: kind }).eq('id', group.id);
     // registra presença na tabela (RPC)
     const myName = user.user_metadata?.display_name || user.email || 'Alguém';
-    supabase.rpc('join_call', { gid: group.id, p_name: myName }).catch(() => {});
+    supabase.rpc('join_call', { gid: group.id, p_name: myName }).then(() => {}, () => {});
 
     navigator.mediaDevices.getUserMedia({ video: wantVideo, audio: true })
       .then((s) => {
@@ -1061,7 +1061,7 @@ function CallOverlay({ kind, group, user, onEnd }) {
     return () => {
       clearTimeout(t);
       pc.close(); ch.unsubscribe(); ch2.unsubscribe();
-      supabase.rpc('leave_call', { gid: group.id }).catch(() => {});
+      supabase.rpc('leave_call', { gid: group.id }).then(() => {}, () => {});
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
       supabase.from('groups').update({ call_active: false }).eq('id', group.id);
     };
