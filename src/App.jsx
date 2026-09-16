@@ -629,7 +629,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
 
   // pergunta pro bot @gpt (só responde se mencionar @gpt) — via endpoint /api/gpt (Groq, chave escondida)
   const askGpt = async (msg) => {
-    if (gptBusy) return; // evita resposta duplicada
+    if (gptBusy) return; // evita resposta duplicada (mesma aba)
     const text = (msg.content || '').toLowerCase();
     if (!text.includes('@gpt')) return;
     // bloqueio por pessoa: autor pode usar o bot?
@@ -639,6 +639,11 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
       toast('🧠 O criador bloqueou o GPT pra você');
       return;
     }
+    // dedupe GLOBAL: só uma conexão responde (tabela gpt_jobs com msg_id único)
+    const { data: job } = await supabase.from('gpt_jobs')
+      .upsert({ group_id: group.id, msg_id: msg.id }, { onConflict: 'msg_id', ignoreDuplicates: true })
+      .select('id');
+    if (!job || !job.length) return; // outra aba/celular já pegou esta mensagem
     setGptBusy(true);
     // bot "digitando" enquanto responde
     supabase.rpc('set_typing', { gid: group.id, p_user: '00000000-0000-0000-0000-000000000000', p_name: '🤖 GPT' })
