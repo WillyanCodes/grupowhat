@@ -198,7 +198,7 @@ export default function App() {
 }
 
 /* ============ EMOJI APPLE (troca emojis por imagens da Apple em qualquer aparelho) ============ */
-const APPLE_CDN = 'https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/apple/64/';
+const APPLE_CDN = '/emoji/'; // self-hosted (mesmo domínio — zero bloqueio, zero CDN)
 const emojiToApple = (emoji) => {
   try {
     const cp = [...emoji].map((c) => c.codePointAt(0).toString(16).padStart(4, '0')).join('-');
