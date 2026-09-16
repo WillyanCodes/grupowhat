@@ -259,7 +259,8 @@ function Main({ user, profile, setProfile }) {
   const loadGroups = async () => {
     const { data: rows, error } = await supabase
       .from('group_members')
-      .select('group_id, status, joined_at, groups!group_id(id, name, code, owner_id, locked, avatar_url, description)');
+      .select('group_id, status, joined_at, groups!group_id(id, name, code, owner_id, locked, avatar_url, description)')
+      .eq('status', 'approved'); // só grupos APROVADOS voltam do banco — pendente nem chega aqui
     if (error) { console.error(error); toast('Erro ao carregar grupos', true); return; }
     const seen = new Set();
     const list = [];
@@ -1057,6 +1058,13 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
     toast('Foto atualizada ✔');
   };
 
+  const clearAll = async () => {
+    if (!confirm('Apagar TODAS as mensagens do grupo para todos? Essa ação não pode ser desfeita.')) return;
+    const { error } = await supabase.rpc('clear_group_messages', { gid: group.id });
+    if (error) { console.error(error); toast('Erro ao apagar mensagens', true); return; }
+    toast('Todas as mensagens foram apagadas 🧹');
+  };
+
   const pendentes = members.filter((m) => m.status === 'pending').length;
 
   return (
@@ -1086,6 +1094,8 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
               <input type="checkbox" checked={lock} onChange={toggleLock} />
               🔒 Somente o criador pode enviar mensagem
             </label>
+            <button className="btn danger" style={{ marginTop: 10, background: '#ef4444' }}
+              onClick={clearAll}>🗑️ Apagar todas as mensagens para todos</button>
           </>
         )}
 
