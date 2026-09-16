@@ -94,6 +94,12 @@ function SystemCard({ m, isOwner, onDecide }) {
   if (m.system_type === 'group_unlocked') {
     return <div className="sys-card">🔓 {m.author_name || 'Admin'} liberou o grupo — todos podem enviar mensagem normalmente</div>;
   }
+  if (m.system_type === 'call_started') {
+    return <div className="sys-card">📞 {m.author_name || 'Alguém'} {m.content || 'iniciou uma chamada'}</div>;
+  }
+  if (m.system_type === 'call_ended') {
+    return <div className="sys-card">📵 {m.author_name || 'Alguém'} encerrou a chamada</div>;
+  }
   return null;
 }
 
@@ -296,6 +302,7 @@ function Main({ user, profile, setProfile }) {
       id: r.gid, name: r.name, code: r.code, owner_id: r.owner_id,
       locked: r.locked, avatar_url: r.avatar_url, description: r.description,
       joined_at: r.joined_at, member_status: r.status || 'approved',
+      calls_allowed: r.calls_allowed !== false, call_active: !!r.call_active,
     }));
     list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     setGroups(list);
@@ -774,8 +781,16 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
             {group.description && '…'} · toque p/ detalhes
           </div>
         </div>
-        <button className="icon-btn" title="Chamada de voz" onClick={() => setCall('voice')}>📞</button>
-        <button className="icon-btn" title="Chamada de vídeo" onClick={() => setCall('video')}>📹</button>
+        <button className="icon-btn" title={group.calls_allowed === false && group.owner_id !== user.id ? 'Chamadas bloqueadas pelo criador' : 'Chamada de voz'}
+          onClick={() => {
+            if (group.calls_allowed === false && group.owner_id !== user.id) { toast('📵 O criador bloqueou chamadas neste grupo', true); return; }
+            setCall('voice');
+          }}>📞</button>
+        <button className="icon-btn" title={group.calls_allowed === false && group.owner_id !== user.id ? 'Chamadas bloqueadas pelo criador' : 'Chamada de vídeo'}
+          onClick={() => {
+            if (group.calls_allowed === false && group.owner_id !== user.id) { toast('📵 O criador bloqueou chamadas neste grupo', true); return; }
+            setCall('video');
+          }}>📹</button>
         <button className="icon-btn" title="Sair do grupo" onClick={() => {
           if (confirm('Sair deste grupo?')) onLeft();
         }}>🚪</button>
@@ -889,7 +904,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         <MediaModal file={pendingFile} onCancel={() => setPendingFile(null)} onSend={sendFile} />
       )}
 
-      {call && <CallOverlay kind={call} group={group} onEnd={() => setCall(null)} />}
+      {call && <CallOverlay kind={call} group={group} user={user} onEnd={() => setCall(null)} />}
       {oneView && (
         <div className="modal-back no-screenshot" onClick={closeOneView} onContextMenu={(e) => e.preventDefault()}>
           <div className="modal one-view-modal no-screenshot" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
@@ -937,24 +952,38 @@ function MediaModal({ file, onCancel, onSend }) {
 }
 
 /* ============ CHAMADAS ============ */
-function CallOverlay({ kind, group, onEnd }) {
+function CallOverlay({ kind, group, user, onEnd }) {
   const pcRef = useRef(null);
   const streamRef = useRef(null);
-  const [status, setStatus] = useState('Chamando…');
+  const chRef = useRef(null);
+  const [status, setStatus] = useState('Conectando…');
+  const [peers, setPeers] = useState([]);
+  const [muted, setMuted] = useState(false);
+  const [remoteMuted, setRemoteMuted] = useState(false);
 
   useEffect(() => {
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     pcRef.current = pc;
     const wantVideo = kind === 'video';
+    // marca que a chamada está ativa no grupo (trigger gera o card no chat)
+    supabase.from('groups').update({ call_active: true, last_call_kind: kind }).eq('id', group.id);
+
     navigator.mediaDevices.getUserMedia({ video: wantVideo, audio: true })
       .then((s) => {
         streamRef.current = s;
         s.getTracks().forEach((t) => pc.addTrack(t, s));
         const el = document.getElementById('local-media');
         if (wantVideo && el) { el.srcObject = s; el.play().catch(() => {}); }
+        setStatus('Conectado');
       }).catch(() => setStatus('Sem câmera/micro — chamada em silêncio'));
 
     const ch = supabase.channel(`call:${group.id}`);
+    chRef.current = ch;
+    // presença: avisa que entrou na chamada
+    ch.on('presence', { event: 'sync' }, () => {
+      const list = Object.values(ch.presenceState()).map((p) => p[0]).filter(Boolean);
+      setPeers(list);
+    });
     ch.on('broadcast', { event: 'signal' }, async ({ payload }) => {
       try {
         await pc.setRemoteDescription(payload.desc);
@@ -965,7 +994,11 @@ function CallOverlay({ kind, group, onEnd }) {
           setStatus('Conectado');
         } else { setStatus('Conectado'); }
       } catch (err) { console.error(err); }
-    }).subscribe();
+    }).subscribe(async (s) => {
+      if (s === 'SUBSCRIBED') {
+        await ch.track({ user_id: user.id, name: user.user_metadata?.display_name || user.email || 'Alguém' });
+      }
+    });
 
     const t = setTimeout(async () => {
       const offer = await pc.createOffer();
@@ -975,21 +1008,41 @@ function CallOverlay({ kind, group, onEnd }) {
 
     pc.ontrack = (ev) => {
       const el = document.getElementById('remote-media');
-      if (el) { el.srcObject = ev.streams[0]; el.play().catch(() => {}); }
+      if (el) {
+        el.srcObject = ev.streams[0];
+        el.play().catch(() => {});
+        // trava o áudio remoto: botão pra pausar/retomar
+        el.muted = remoteMuted;
+      }
     };
 
     return () => {
       clearTimeout(t);
       pc.close(); ch.unsubscribe();
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
+      supabase.from('groups').update({ call_active: false }).eq('id', group.id);
     };
   }, []);
+
+  const toggleMute = () => {
+    const nm = !muted; setMuted(nm);
+    streamRef.current?.getAudioTracks().forEach((tr) => { tr.enabled = !nm; });
+  };
+  const toggleRemote = () => {
+    const nm = !remoteMuted; setRemoteMuted(nm);
+    const el = document.getElementById('remote-media');
+    if (el) el.muted = nm;
+  };
 
   const end = () => {
     pcRef.current?.close();
     streamRef.current?.getTracks().forEach((tr) => tr.stop());
+    supabase.from('groups').update({ call_active: false }).eq('id', group.id);
     onEnd();
   };
+
+  // quem está na chamada (sem mim, mostro minha própria presença também)
+  const who = peers.map((p) => p.name || p.user_id || 'Alguém');
 
   return (
     <div className="call-overlay">
@@ -1002,8 +1055,22 @@ function CallOverlay({ kind, group, onEnd }) {
       <Avatar name={group.name} url={group.avatar_url} size={kind === 'video' ? 72 : 88} />
       <h2>{group.name}</h2>
       <div className="status">{status} — {kind === 'voice' ? '📞 voz' : '📹 vídeo'}</div>
+
+      {/* quem está na chamada */}
+      <div className="call-peers">
+        {who.length === 0 ? <span className="muted">Só você por enquanto…</span> : who.map((w, i) => (
+          <span key={i} className="call-peer">🟢 {w}</span>
+        ))}
+      </div>
+
       <div className="callbar">
-        <button className="call-btn red" onClick={end}>✕</button>
+        <button className="call-btn" title={muted ? 'Desmutar' : 'Mutar'} onClick={toggleMute}>
+          {muted ? '🔇' : '🎤'}
+        </button>
+        <button className="call-btn" title={remoteMuted ? 'Ouvir de novo' : 'Pausar volume (não ouvir)'} onClick={toggleRemote}>
+          {remoteMuted ? '🔇' : '🔊'}
+        </button>
+        <button className="call-btn red" title="Encerrar" onClick={end}>✕</button>
       </div>
     </div>
   );
@@ -1101,6 +1168,7 @@ function JoinModal({ onClose, onJoin }) {
 function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
   const [members, setMembers] = useState([]);
   const [lock, setLock] = useState(!!group.locked);
+  const [callsAllowed, setCallsAllowed] = useState(group.calls_allowed !== false);
   const [name, setName] = useState(group.name);
   const [desc, setDesc] = useState(group.description || '');
   const [avatarUrl, setAvatarUrl] = useState(group.avatar_url || '');
@@ -1135,6 +1203,13 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
     setLock(nl);
     await supabase.from('groups').update({ locked: nl }).eq('id', group.id);
     toast(nl ? '🔒 Só você pode enviar mensagem agora' : '🔓 Todos podem enviar mensagem');
+  };
+  const toggleCalls = async () => {
+    const nv = !callsAllowed;
+    setCallsAllowed(nv);
+    await supabase.from('groups').update({ calls_allowed: nv }).eq('id', group.id);
+    toast(nv ? '📞 Todos podem iniciar chamadas' : '📵 Só você pode iniciar chamadas');
+    onChanged();
   };
   const saveInfo = async () => {
     await supabase.from('groups').update({ name: name.trim() || group.name, description: desc.trim() })
@@ -1191,6 +1266,10 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
             <label className="lock-row" style={{ marginTop: 10 }}>
               <input type="checkbox" checked={lock} onChange={toggleLock} />
               🔒 Somente o criador pode enviar mensagem
+            </label>
+            <label className="lock-row" style={{ marginTop: 10 }}>
+              <input type="checkbox" checked={callsAllowed} onChange={toggleCalls} />
+              📞 Todos podem iniciar chamadas (voz/vídeo)
             </label>
             <button className="btn danger" style={{ marginTop: 10, background: '#ef4444' }}
               onClick={clearAll}>🗑️ Apagar todas as mensagens para todos</button>
