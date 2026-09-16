@@ -216,7 +216,7 @@ function AppleEmoji({ text = '', size = 18, className = '' }) {
       if (!SURROGATE_RE.test(s.segment)) continue; // não é emoji
       if (s.index > last) parts.push(text.slice(last, s.index));
       const url = emojiToApple(s.segment);
-      if (url) parts.push(<img key={s.index} src={url} alt={s.segment} className={`apple-emoji ${className}`} style={{ width: size, height: size }} draggable={false} />);
+      if (url) parts.push(<span key={s.index} className={`apple-emoji ${className}`} style={{ width: size, height: size, backgroundImage: `url(${url}?v=2)`, backgroundSize: 'contain' }} aria-label={s.segment} role="img" />);
       else parts.push(s.segment);
       last = s.index + s.segment.length;
     }

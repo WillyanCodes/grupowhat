@@ -193,7 +193,7 @@ input, textarea { font-family: inherit; }
   background: rgba(0,0,0,0.35); color: #fff; font-size: 13px; font-weight: 700; text-align: center; line-height: 1.5; }
 
 /* Emoji Apple + markdown do bot */
-.apple-emoji { display: inline-block; vertical-align: -3px; margin: 0 1px; }
+.apple-emoji { display: inline-block; background-repeat: no-repeat; background-position: center; vertical-align: -3px; margin: 0 1px; }
 .md-body { line-height: 1.55; }
 .md-body b { font-weight: 700; }
 .md-body i { font-style: italic; }
