@@ -155,7 +155,7 @@ class ErrorBoundary extends Component {
   }
 }
 // marcador de versão do bundle (debug: se você ver "v7" no rodapé, o bundle novo está rodando)
-const VersionMark = () => <div style={{ position: 'fixed', bottom: 2, right: 4, fontSize: 9, opacity: 0.25, color: 'var(--muted)', zIndex: 1 }}>v7</div>;
+const VersionMark = () => <div style={{ position: 'fixed', top: 4, left: '50%', transform: 'translateX(-50%)', fontSize: 28, fontWeight: 800, color: '#f00', background: '#fff', padding: '2px 14px', borderRadius: 8, zIndex: 9999, boxShadow: '0 2px 12px rgba(0,0,0,.3)' }}>v7</div>;
 
 export default function App() {
   const [session, setSession] = useState(null);
