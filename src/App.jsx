@@ -257,21 +257,14 @@ function Main({ user, profile, setProfile }) {
   }, []);
 
   const loadGroups = async () => {
-    const { data: rows, error } = await supabase
-      .from('group_members')
-      .select('group_id, status, joined_at, groups!group_id(id, name, code, owner_id, locked, avatar_url, description)')
-      .eq('status', 'approved'); // só grupos APROVADOS voltam do banco — pendente nem chega aqui
+    // função no banco: devolve SÓ grupos onde o usuário é aprovado — pendente é invisível por definição
+    const { data, error } = await supabase.rpc('my_groups');
     if (error) { console.error(error); toast('Erro ao carregar grupos', true); return; }
-    const seen = new Set();
-    const list = [];
-    (rows || []).forEach((r) => {
-      const g = r.groups || r.group || r;
-      if (!g || !g.id || seen.has(g.id)) return; // dedupe (corrige "2 abas do mesmo grupo")
-      seen.add(g.id);
-      // SÓ inclui na lista se o status for APROVADO (pendente fica invisível até admin aceitar)
-      if (r.status !== 'approved') return;
-      list.push({ ...g, member_status: r.status, joined_at: r.joined_at });
-    });
+    const list = (data || []).map((r) => ({
+      id: r.gid, name: r.name, code: r.code, owner_id: r.owner_id,
+      locked: r.locked, avatar_url: r.avatar_url, description: r.description,
+      joined_at: r.joined_at, member_status: r.status || 'approved',
+    }));
     list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     setGroups(list);
     setActive((cur) => cur ? list.find((g) => g.id === cur.id) || null : null);
