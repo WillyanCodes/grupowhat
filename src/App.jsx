@@ -202,7 +202,12 @@ function startGlobalEmojiScanner() {
         if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
         if (parent) {
           parent.dataset.emojiDone = '1';
-          parent.replaceChild(frag, n);
+          // envolve num span inline pra não virar item de flex/grid (evita empilhar)
+          const span = document.createElement('span');
+          span.className = 'apple-emoji-wrap';
+          span.style.display = 'inline';
+          span.appendChild(frag);
+          parent.replaceChild(span, n);
         }
       }
     } catch (_) {}
@@ -667,6 +672,16 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     const [oneView, setOneView] = useState(null);
     const [shotWarned, setShotWarned] = useState(false);
     const [replying, setReplying] = useState(null); // msg que está sendo respondida
+
+  // fecha o menu de contexto ao clicar fora ou apertar Esc
+  useEffect(() => {
+    if (!menuMsg) return;
+    const close = () => setMenuMsg(null);
+    const onKey = (e) => { if (e.key === 'Escape') setMenuMsg(null); };
+    document.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', onKey); };
+  }, [menuMsg]);
       const [canCall, setCanCall] = useState(true); // permissão de chamada DESTE usuário
         const [callCount, setCallCount] = useState(0); // quantos estão na chamada agora
         const [gptBusy, setGptBusy] = useState(false); // já respondendo? (evita duplicar)
@@ -924,6 +939,18 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     setMessages((ms) => ms.filter((m) => m.id !== id));
     setMenuMsg(null);
   };
+  const copyMsg = async (m) => {
+    try {
+      const txt = m.kind === 'text' ? m.content
+        : m.kind === 'image' ? '📷 Foto'
+        : m.kind === 'video' ? '🎥 Vídeo'
+        : m.kind === 'audio' ? '🎤 Áudio'
+        : m.kind === 'file' ? '📎 Arquivo' : '';
+      await navigator.clipboard.writeText(txt || '');
+      toast('Copiado ✔');
+    } catch (_) { toast('Não consegui copiar', true); }
+    setMenuMsg(null);
+  };
   const viewOne = async (id) => {
     await supabase.rpc('view_msg', { mid: id });
     setViewed((v) => new Map(v).set(id, (v.get(id) || 0) + 1));
@@ -966,7 +993,8 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   };
 
   const visible = messages.filter((m) => !(m.one_view && m.user_id !== user.id && hidden.has(m.id)));
-  const canDeleteAll = (m) => m.user_id === user.id;
+  // admin (criador) pode apagar pra todos QUALQUER mensagem, mesmo de outro usuário
+  const canDeleteAll = (m) => m.user_id === user.id || group.owner_id === user.id;
 
   if (pending) {
     return (
@@ -1081,6 +1109,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                   <div className="msg-menu" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => hideMsg(m.id)}>🗑️ Apagar pra mim</button>
                     {canDeleteAll(m) && <button onClick={() => deleteMsg(m.id)}>❌ Apagar pra todos</button>}
+                    <button onClick={() => copyMsg(m)}>📋 Copiar</button>
                     <button onClick={() => replyTo(m)}>↩️ Responder</button>
                     <button onClick={() => forwardMsg(m)}>➡️ Encaminhar</button>
                   </div>
