@@ -6,10 +6,13 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   if (!GROQ_KEY) return res.status(500).json({ error: 'GROQ_API_KEY não configurada' });
 
-  const { prompt, imageUrl } = req.body || {};
+  const { prompt, imageUrl, persona } = req.body || {};
   if (!prompt) return res.status(400).json({ error: 'prompt obrigatório' });
 
   try {
+    const sysMsg = persona && persona.trim()
+      ? { role: 'system', content: persona.trim() }
+      : { role: 'system', content: 'Você é o GPT do GrupoWhat. Responda em português do Brasil, de forma clara, direta e amigável.' };
     const content = [{ type: 'text', text: prompt }];
     if (imageUrl) {
       // Baixa a imagem e converte pra base64 (Groq aceita URL direta, mas base64 é mais garantido)
@@ -20,14 +23,14 @@ export default async function handler(req, res) {
     }
 
     const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
-      body: JSON.stringify({
-        model: 'qwen/qwen3.8-27b',
-        messages: [{ role: 'user', content }],
-        max_tokens: 800,
-      }),
-    });
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
+          body: JSON.stringify({
+            model: 'qwen/qwen3.8-27b',
+            messages: [sysMsg, { role: 'user', content }],
+            max_tokens: 800,
+          }),
+        });
     const j = await r.json().catch(() => ({}));
     const answer = j?.choices?.[0]?.message?.content || null;
     if (!answer) return res.status(502).json({ error: 'Groq sem resposta' });

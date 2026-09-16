@@ -816,13 +816,19 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     supabase.rpc('set_typing', { gid: group.id, p_user: '00000000-0000-0000-0000-000000000000', p_name: '🤖 GPT' })
       .then(() => {}, () => {});
     try {
+      // carrega a personalidade global do bot (se houver)
+      let persona = null;
+      try {
+        const { data: cfg } = await supabase.from('bot_config').select('persona').limit(1).maybeSingle();
+        if (cfg?.persona) persona = cfg.persona;
+      } catch (_) {}
       let imageUrl = null;
       if (msg.kind === 'image' && msg.media_url) imageUrl = msg.media_url;
       let prompt = (msg.content || '').replace(/@gpt/gi, '').trim() || 'Descreva esta imagem';
       const res = await fetch('/api/gpt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, imageUrl }),
+        body: JSON.stringify({ prompt, imageUrl, persona }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.answer) { toast('🤖 GPT indisponível no momento', true); return; }
@@ -1721,6 +1727,16 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('gw_theme') || 'green'; } catch (_) { return 'green'; } });
   const [mode, setMode] = useState(() => { try { return localStorage.getItem('gw_mode') || 'dark'; } catch (_) { return 'dark'; } });
   const [name, setName] = useState(profile || '');
+  const [persona, setPersona] = useState('');
+  // só o criador (admin) pode editar a personalidade do bot
+  const isOwner = isAdmin(user.email);
+
+  useEffect(() => {
+    // carrega a personalidade atual do bot (global)
+    supabase.from('bot_config').select('*').limit(1).maybeSingle()
+      .then(({ data }) => { if (data?.persona) setPersona(data.persona); })
+      .catch(() => {});
+  }, []);
 
   const apply = (th, md) => {
     try {
@@ -1744,6 +1760,11 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
         await supabase.rpc('update_my_messages', { p_display: name.trim() });
         setProfile(name.trim());
         toast('Nome salvo ✔');
+      }
+      // salva a personalidade do bot (global, só admin)
+      if (isOwner) {
+        await supabase.from('bot_config').upsert({ id: 1, persona: persona.trim() }, { onConflict: 'id' });
+        toast('Personalidade do bot salva ✔');
       }
     } catch (err) { console.error(err); }
     onClose();
@@ -1771,6 +1792,15 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
         <div className="muted" style={{ marginTop: 12 }}>✏️ Seu nome / nick (aparece pros outros)</div>
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={30}
           placeholder={profile || 'Digite seu nick'} />
+        {isOwner && (
+          <>
+            <div className="muted" style={{ marginTop: 14 }}>🤖 Personalidade do bot @gpt (vale pra todos os grupos)</div>
+            <textarea className="input" rows={3} style={{ resize: 'vertical', width: '100%' }}
+              placeholder="Ex.: Você é um amigozão descontraído, responde curto, usa gírias brasileiras, adora emojis e chama todo mundo de mano."
+              value={persona} maxLength={600}
+              onChange={(e) => setPersona(e.target.value)} />
+          </>
+        )}
         <div className="actions">
           <button className="btn ghost" onClick={onClose}>Fechar</button>
           <button className="btn" onClick={saveName}>Salvar</button>
