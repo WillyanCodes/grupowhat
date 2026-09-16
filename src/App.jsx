@@ -157,6 +157,61 @@ class ErrorBoundary extends Component {
 // marcador de versão do bundle (debug: se você ver "v7" no rodapé, o bundle novo está rodando)
 const VersionMark = () => <div style={{ position: 'fixed', top: 4, left: '50%', transform: 'translateX(-50%)', fontSize: 28, fontWeight: 800, color: '#f00', background: '#fff', padding: '2px 14px', borderRadius: 8, zIndex: 9999, boxShadow: '0 2px 12px rgba(0,0,0,.3)' }}>v7</div>;
 
+// ===== VARREDOR GLOBAL DE EMOJIS: troca QUALQUER emoji da interface por imagem Apple =====
+const SURROGATE_RE2 = /[\uD800-\uDBFF]/;
+let globalScannerStarted = false;
+function startGlobalEmojiScanner() {
+  if (globalScannerStarted || typeof MutationObserver === 'undefined') return;
+  globalScannerStarted = true;
+  const scan = () => {
+    try {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+        acceptNode(n) {
+          const p = n.parentElement;
+          if (!p || p.closest('script,style,textarea,input,code,pre,.apple-emoji,img,video,audio')) return NodeFilter.FILTER_REJECT;
+          return SURROGATE_RE2.test(n.nodeValue || '') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        },
+      });
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      for (const n of nodes) {
+        const text = n.nodeValue || '';
+        if (!SURROGATE_RE2.test(text)) continue;
+        const parent = n.parentElement;
+        // não mexe em coisas que já foram processadas
+        if (parent && (parent.dataset?.emojiDone || parent.closest('.apple-emoji'))) continue;
+        const frag = document.createDocumentFragment();
+        let last = 0;
+        const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+        for (const s of seg.segment(text)) {
+          if (!SURROGATE_RE2.test(s.segment)) continue;
+          if (s.index > last) frag.appendChild(document.createTextNode(text.slice(last, s.index)));
+          const cp = [...s.segment].map((c) => c.codePointAt(0).toString(16).padStart(4, '0')).join('-');
+          const url = `/emoji/${cp}.png`;
+          const img = document.createElement('img');
+          img.src = url;
+          img.className = 'apple-emoji';
+          img.style.width = '1.1em';
+          img.style.height = '1.1em';
+          img.style.verticalAlign = '-0.18em';
+          img.alt = s.segment;
+          img.draggable = false;
+          frag.appendChild(img);
+          last = s.index + s.segment.length;
+        }
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        if (parent) {
+          parent.dataset.emojiDone = '1';
+          parent.replaceChild(frag, n);
+        }
+      }
+    } catch (_) {}
+  };
+  scan();
+  new MutationObserver(() => scan()).observe(document.body, { childList: true, subtree: true, characterData: true });
+}
+// ===== FIM VARREDOR GLOBAL =====
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfileRaw] = useState(() => {
@@ -189,6 +244,7 @@ export default function App() {
       document.body.classList.remove('light', ...THEMES.map((t) => 'theme-' + t.id));
       document.body.classList.add(md === 'light' ? 'light' : '', 'theme-' + th);
     } catch (_) {}
+    startGlobalEmojiScanner();
   }, []);
 
   let body;
