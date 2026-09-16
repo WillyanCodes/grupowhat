@@ -354,7 +354,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, onNew, onJoi
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState('');
   const filtered = groups.filter((g) =>
-    (g.name || '').toLowerCase().includes(search.toLowerCase()));
+    g.member_status === 'approved' && (g.name || '').toLowerCase().includes(search.toLowerCase()));
   return (
     <div className="sidebar">
       <header>
