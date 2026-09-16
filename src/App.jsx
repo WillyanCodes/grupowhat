@@ -669,6 +669,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   const [hidden, setHidden] = useState(() => new Set());
   const [viewed, setViewed] = useState(() => new Map());
   const [menuMsg, setMenuMsg] = useState(null);
+  const menuRef = useRef(null);
   const [pendingFile, setPendingFile] = useState(null);
   const [recording, setRecording] = useState(false);
     const [recTime, setRecTime] = useState(0);
@@ -679,6 +680,13 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   // fecha o menu de contexto ao clicar fora ou apertar Esc
   useEffect(() => {
     if (!menuMsg) return;
+    // se o menu for estourar o topo da tela, abre pra baixo (flip)
+    const el = menuRef.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      if (r.top < 8) el.classList.add('flip');
+      else el.classList.remove('flip');
+    }
     const close = () => setMenuMsg(null);
     const onKey = (e) => { if (e.key === 'Escape') setMenuMsg(null); };
     document.addEventListener('click', close);
@@ -886,7 +894,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     setPendingFile(f);
   };
 
-  const sendFile = async (oneView) => {
+  const sendFile = async (oneView, caption = '') => {
     if (pending) { toast('Aguarde a aprovação para enviar mídia ⏳', true); return; }
     if (lockedForMe) { toast('🔒 Somente o criador pode enviar mensagem', true); return; }
     const f = pendingFile;
@@ -902,6 +910,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
     await insertMsg({
       group_id: group.id, user_id: user.id, kind, media_url: url,
+      content: caption || null,
       one_view: !!oneView, author_name: profile || user.email?.split('@')[0],
     });
     toast('Enviado ✔');
@@ -1127,7 +1136,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                 </span>
                 <button className="msg-menu-btn" onClick={() => setMenuMsg(menuMsg === m.id ? null : m.id)}>⋮</button>
                 {menuMsg === m.id && (
-                  <div className={`msg-menu ${m.user_id === user.id ? 'from-out' : 'from-in'}`} onClick={(e) => e.stopPropagation()}>
+                  <div ref={menuRef} className={`msg-menu ${m.user_id === user.id ? 'from-out' : 'from-in'}`} onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => hideMsg(m.id)}>🗑️ Apagar pra mim</button>
                     {canDeleteAll(m) && <button onClick={() => deleteMsg(m.id)}>❌ Apagar pra todos</button>}
                     <button onClick={() => copyMsg(m)}>📋 Copiar</button>
@@ -1225,6 +1234,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
 
 function MediaModal({ file, onCancel, onSend }) {
   const [one, setOne] = useState(false);
+  const [caption, setCaption] = useState('');
   const url = URL.createObjectURL(file);
   const isImg = file.type.startsWith('image/');
   const isVid = file.type.startsWith('video/');
@@ -1236,13 +1246,17 @@ function MediaModal({ file, onCancel, onSend }) {
         {isImg && <img src={url} alt="" className="media-preview" />}
         {isVid && <video src={url} controls className="media-preview" />}
         {!isImg && !isVid && <div className="media-preview file-preview">📄 {file.name}</div>}
+        <input className="input" style={{ marginTop: 10 }} placeholder="Legenda (opcional) — ex.: @gpt o que tem nessa imagem?"
+          value={caption} maxLength={500}
+          onChange={(e) => setCaption(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(one ? true : null, caption.trim()); } }} />
         <label className="lock-row" style={{ marginTop: 10 }}>
           <input type="checkbox" checked={one} onChange={(e) => setOne(e.target.checked)} />
           🕐 Visualização única (some ao ser vista)
         </label>
         <div className="actions">
           <button className="btn ghost" onClick={onCancel}>Cancelar</button>
-          <button className="btn" onClick={() => onSend(one ? true : null)}>Enviar</button>
+          <button className="btn" onClick={() => onSend(one ? true : null, caption.trim())}>Enviar</button>
         </div>
       </div>
     </div>
