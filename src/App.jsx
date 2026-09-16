@@ -553,12 +553,18 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
             .then(({ data }) => { if (data) setCanCall(data.can_call !== false); });
         }, [group.id, user.id]);
 
-        // contagem ao vivo de quem está na chamada (sem entrar) — MESMO canal da chamada
+        // contagem ao vivo de quem está na chamada (sem entrar) — via tabela call_presence
           useEffect(() => {
-            const ch = supabase.channel(`call:${group.id}`);
-            ch.on('presence', { event: 'sync' }, () => {
-              setCallCount(Object.keys(ch.presenceState()).length);
-            }).subscribe();
+            const load = async () => {
+              const { count } = await supabase.from('call_presence')
+                .select('*', { count: 'exact', head: true }).eq('group_id', group.id);
+              setCallCount(count || 0);
+            };
+            load();
+            const ch = supabase.channel(`call-presence-count:${group.id}`)
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'call_presence', filter: `group_id=eq.${group.id}` },
+                () => load())
+              .subscribe();
             return () => { supabase.removeChannel(ch); };
           }, [group.id]);
 
@@ -989,6 +995,7 @@ function CallOverlay({ kind, group, user, onEnd }) {
   const [peers, setPeers] = useState([]);
   const [muted, setMuted] = useState(false);
   const [remoteMuted, setRemoteMuted] = useState(false);
+  const [left, setLeft] = useState(false);
 
   useEffect(() => {
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
@@ -996,6 +1003,9 @@ function CallOverlay({ kind, group, user, onEnd }) {
     const wantVideo = kind === 'video';
     // marca que a chamada está ativa no grupo (trigger gera o card no chat)
     supabase.from('groups').update({ call_active: true, last_call_kind: kind }).eq('id', group.id);
+    // registra presença na tabela (RPC)
+    const myName = user.user_metadata?.display_name || user.email || 'Alguém';
+    supabase.rpc('join_call', { gid: group.id, p_name: myName }).catch(() => {});
 
     navigator.mediaDevices.getUserMedia({ video: wantVideo, audio: true })
       .then((s) => {
@@ -1008,11 +1018,6 @@ function CallOverlay({ kind, group, user, onEnd }) {
 
     const ch = supabase.channel(`call:${group.id}`);
     chRef.current = ch;
-    // presença: avisa que entrou na chamada
-    ch.on('presence', { event: 'sync' }, () => {
-      const list = Object.values(ch.presenceState()).map((p) => p[0]).filter(Boolean);
-      setPeers(list);
-    });
     ch.on('broadcast', { event: 'signal' }, async ({ payload }) => {
       try {
         await pc.setRemoteDescription(payload.desc);
@@ -1023,11 +1028,19 @@ function CallOverlay({ kind, group, user, onEnd }) {
           setStatus('Conectado');
         } else { setStatus('Conectado'); }
       } catch (err) { console.error(err); }
-    }).subscribe(async (s) => {
-      if (s === 'SUBSCRIBED') {
-        await ch.track({ user_id: user.id, name: user.user_metadata?.display_name || user.email || 'Alguém' });
-      }
-    });
+    }).subscribe();
+
+    // lista de quem está na chamada via tabela (realtime)
+    const loadPeers = async () => {
+      const { data } = await supabase.from('call_presence')
+        .select('user_id, name').eq('group_id', group.id);
+      setPeers(data || []);
+    };
+    loadPeers();
+    const ch2 = supabase.channel(`call-presence:${group.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_presence', filter: `group_id=eq.${group.id}` },
+        () => loadPeers())
+      .subscribe();
 
     const t = setTimeout(async () => {
       const offer = await pc.createOffer();
@@ -1047,7 +1060,8 @@ function CallOverlay({ kind, group, user, onEnd }) {
 
     return () => {
       clearTimeout(t);
-      pc.close(); ch.unsubscribe();
+      pc.close(); ch.unsubscribe(); ch2.unsubscribe();
+      supabase.rpc('leave_call', { gid: group.id }).catch(() => {});
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
       supabase.from('groups').update({ call_active: false }).eq('id', group.id);
     };
@@ -1070,8 +1084,8 @@ function CallOverlay({ kind, group, user, onEnd }) {
     onEnd();
   };
 
-  // quem está na chamada (sem mim, mostro minha própria presença também)
-  const who = peers.map((p) => p.name || p.user_id || 'Alguém');
+  // quem está na chamada (da tabela de presença)
+  const who = peers.map((p) => p.name || 'Alguém');
 
   return (
     <div className="call-overlay">
