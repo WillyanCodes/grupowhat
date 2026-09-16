@@ -205,17 +205,22 @@ const emojiToApple = (emoji) => {
     return `${APPLE_CDN}${cp}.png`;
   } catch { return null; }
 };
-const EMOJI_RE = /(\p{Extended_Pictographic}[\uFE0F\u200D\u20E3]*|\p{Extended_Pictographic})/gu;
+// regex de emoji: usa Intl.Segmenter (compatível com TODOS os navegadores — Firefox, Chrome, etc.)
+const SURROGATE_RE = /[\uD800-\uDBFF]/;
 function AppleEmoji({ text = '', size = 18, className = '' }) {
   const parts = [];
   let last = 0;
-  for (const m of text.matchAll(EMOJI_RE)) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
-    const url = emojiToApple(m[0]);
-    if (url) parts.push(<img key={m.index} src={url} alt={m[0]} className={`apple-emoji ${className}`} style={{ width: size, height: size }} draggable={false} />);
-    else parts.push(m[0]);
-    last = m.index + m[0].length;
-  }
+  try {
+    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    for (const s of seg.segment(text)) {
+      if (!SURROGATE_RE.test(s.segment)) continue; // não é emoji
+      if (s.index > last) parts.push(text.slice(last, s.index));
+      const url = emojiToApple(s.segment);
+      if (url) parts.push(<img key={s.index} src={url} alt={s.segment} className={`apple-emoji ${className}`} style={{ width: size, height: size }} draggable={false} />);
+      else parts.push(s.segment);
+      last = s.index + s.segment.length;
+    }
+  } catch { /* fallback: mostra texto puro */ }
   if (last < text.length) parts.push(text.slice(last));
   return <>{parts}</>;
 }
