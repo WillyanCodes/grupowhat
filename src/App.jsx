@@ -737,17 +737,17 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
             return () => { clearInterval(iv); supabase.removeChannel(ch); };
           }, [group.id]);
 
-    // quem está digitando agora — polling 2s (tabela typing; some sozinho após 3s)
+    // quem está digitando agora — polling rápido (800ms) + realtime; some sozinho após 2s
     useEffect(() => {
       const load = async () => {
-        const cutoff = new Date(Date.now() - 3000).toISOString();
+        const cutoff = new Date(Date.now() - 2000).toISOString();
         const { data } = await supabase.from('typing')
           .select('user_id, name')
           .eq('group_id', group.id).gt('updated_at', cutoff);
         setTyping((data || []).filter((t) => t.user_id !== user.id));
       };
       load();
-      const iv = setInterval(load, 2000);
+      const iv = setInterval(load, 800);
       const ch = supabase.channel(`typing:${group.id}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'typing', filter: `group_id=eq.${group.id}` },
           () => load())
@@ -1200,12 +1200,12 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         <textarea rows={1} placeholder="Mensagem" value={text}
           onChange={(e) => {
             setText(e.target.value);
-            // avisa que estou digitando (throttle: no máx 1x por 2s)
+            // avisa que estou digitando (throttle: no máx 1x por 400ms)
             if (e.target.value && !typingSent.current) {
               typingSent.current = true;
               supabase.rpc('set_typing', { gid: group.id, p_user: user.id, p_name: profile || user.email?.split('@')[0] })
                 .then(() => {}, () => {});
-              setTimeout(() => { typingSent.current = false; }, 2000);
+              setTimeout(() => { typingSent.current = false; }, 400);
             }
           }}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
