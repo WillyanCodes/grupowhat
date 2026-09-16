@@ -71,7 +71,7 @@ function AudioMsg({ src }) {
   );
 }
 
-function SystemCard({ m, isOwner, onDecide }) {
+function SystemCard({ m, isOwner, onDecide, onJoinCall, callCount }) {
   if (m.system_type === 'join_request') {
     return (
       <div className="sys-card">
@@ -95,7 +95,14 @@ function SystemCard({ m, isOwner, onDecide }) {
     return <div className="sys-card">🔓 {m.author_name || 'Admin'} liberou o grupo — todos podem enviar mensagem normalmente</div>;
   }
   if (m.system_type === 'call_started') {
-    return <div className="sys-card">📞 {m.author_name || 'Alguém'} {m.content || 'iniciou uma chamada'}</div>;
+    const isVid = (m.content || '').includes('vídeo');
+    return (
+      <div className="sys-card call-card">
+        <div className="sys-text">📞 {m.author_name || 'Alguém'} iniciou uma chamada de {isVid ? 'vídeo 📹' : 'voz 📞'}</div>
+        <div className="sys-text muted" style={{ fontSize: 12 }}>🎧 {callCount || 0} na chamada agora</div>
+        <button className="btn" style={{ marginTop: 4 }} onClick={() => onJoinCall(isVid ? 'video' : 'voice')}>📲 Entrar na chamada</button>
+      </div>
+    );
   }
   if (m.system_type === 'call_ended') {
     return <div className="sys-card">📵 {m.author_name || 'Alguém'} encerrou a chamada</div>;
@@ -535,7 +542,25 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     const [oneView, setOneView] = useState(null);
     const [shotWarned, setShotWarned] = useState(false);
     const [replying, setReplying] = useState(null); // msg que está sendo respondida
-    const messagesEnd = useRef(null);
+      const [canCall, setCanCall] = useState(true); // permissão de chamada DESTE usuário
+        const [callCount, setCallCount] = useState(0); // quantos estão na chamada agora
+        const messagesEnd = useRef(null);
+
+        // carrega a permissão de chamada individual
+        useEffect(() => {
+          supabase.from('group_members').select('can_call')
+            .eq('group_id', group.id).eq('user_id', user.id).maybeSingle()
+            .then(({ data }) => { if (data) setCanCall(data.can_call !== false); });
+        }, [group.id, user.id]);
+
+        // contagem ao vivo de quem está na chamada (sem entrar) — MESMO canal da chamada
+          useEffect(() => {
+            const ch = supabase.channel(`call:${group.id}`);
+            ch.on('presence', { event: 'sync' }, () => {
+              setCallCount(Object.keys(ch.presenceState()).length);
+            }).subscribe();
+            return () => { supabase.removeChannel(ch); };
+          }, [group.id]);
 
     // screenshot deterrent: detect PrintScreen key + visibility change
     useEffect(() => {
@@ -781,14 +806,14 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
             {group.description && '…'} · toque p/ detalhes
           </div>
         </div>
-        <button className="icon-btn" title={group.calls_allowed === false && group.owner_id !== user.id ? 'Chamadas bloqueadas pelo criador' : 'Chamada de voz'}
+        <button className="icon-btn" title={!canCall ? 'Você não pode iniciar chamadas (criador bloqueou)' : 'Chamada de voz'}
           onClick={() => {
-            if (group.calls_allowed === false && group.owner_id !== user.id) { toast('📵 O criador bloqueou chamadas neste grupo', true); return; }
+            if (group.owner_id !== user.id && !canCall) { toast('📵 O criador bloqueou chamadas pra você', true); return; }
             setCall('voice');
           }}>📞</button>
-        <button className="icon-btn" title={group.calls_allowed === false && group.owner_id !== user.id ? 'Chamadas bloqueadas pelo criador' : 'Chamada de vídeo'}
+        <button className="icon-btn" title={!canCall ? 'Você não pode iniciar chamadas (criador bloqueou)' : 'Chamada de vídeo'}
           onClick={() => {
-            if (group.calls_allowed === false && group.owner_id !== user.id) { toast('📵 O criador bloqueou chamadas neste grupo', true); return; }
+            if (group.owner_id !== user.id && !canCall) { toast('📵 O criador bloqueou chamadas pra você', true); return; }
             setCall('video');
           }}>📹</button>
         <button className="icon-btn" title="Sair do grupo" onClick={() => {
@@ -804,7 +829,11 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
             return (
               <React.Fragment key={m.id}>
                 {showDay && <div className="day-divider">{fmtDay(m.created_at)}</div>}
-                <SystemCard m={m} isOwner={group.owner_id === user.id}
+                <SystemCard m={m} isOwner={group.owner_id === user.id} callCount={callCount}
+                  onJoinCall={(kind) => {
+                    if (group.owner_id !== user.id && !canCall) { toast('📵 O criador bloqueou chamadas pra você', true); return; }
+                    setCall(kind);
+                  }}
                   onDecide={(uid, ok) => decideJoin(m.id, uid, ok)} />
               </React.Fragment>
             );
@@ -1178,8 +1207,8 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
   useEffect(() => { load(); }, []);
   const load = async () => {
     const { data } = await supabase.from('group_members')
-      .select('user_id, status, joined_at').eq('group_id', group.id);
-    setMembers(data || []);
+      .select('user_id, status, joined_at, can_call').eq('group_id', group.id);
+    setMembers((data || []).map((m) => ({ ...m, can_call: m.can_call !== false })));
   };
 
   const kick = async (uid) => {
@@ -1302,6 +1331,18 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
                   {m.user_id === group.owner_id ? '👑' : m.status === 'pending' ? '⏳ Pendente' : '—'}
                 </div>
               </div>
+              {isOwner && m.user_id !== user.id && m.status === 'approved' && (
+                <div className="member-call-perm" title="Permitir que esta pessoa inicie chamadas">
+                  <button
+                    className={`perm-btn ${m.can_call ? 'on' : ''}`}
+                    onClick={async () => {
+                      await supabase.rpc('set_call_permission', { gid: group.id, uid: m.user_id, p_can: !m.can_call });
+                      await load();
+                      toast(m.can_call ? '📵 Chamadas bloqueadas pra este membro' : '📞 Este membro pode iniciar chamadas');
+                    }}
+                  >📞 {m.can_call ? 'Permitido' : 'Bloqueado'}</button>
+                </div>
+              )}
               {isOwner && m.user_id !== user.id && (
                 <>
                   {m.status === 'pending' ? (
