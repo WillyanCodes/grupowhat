@@ -23,7 +23,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
       body: JSON.stringify({
-        model: 'llama-3.2-90b-vision-preview',
+        model: 'qwen/qwen3.8-27b',
         messages: [{ role: 'user', content }],
         max_tokens: 800,
       }),

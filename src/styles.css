@@ -193,6 +193,14 @@ input, textarea { font-family: inherit; }
   background: rgba(0,0,0,0.35); color: #fff; font-size: 13px; font-weight: 700; text-align: center; line-height: 1.5; }
 
 /* Input bar */
+.typing-bar { padding: 4px 14px; background: var(--panel); display: flex; align-items: center; gap: 8px;
+  border-top: 1px solid var(--border); font-size: 12.5px; color: var(--muted); }
+.typing-dots { display: inline-flex; gap: 3px; }
+.typing-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: inline-block;
+  animation: tp 1s infinite ease-in-out; }
+.typing-dots i:nth-child(2) { animation-delay: .15s; }
+.typing-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes tp { 0%, 60%, 100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-4px); opacity: 1; } }
 .inputbar { padding: 8px 12px; background: var(--panel); display: flex; align-items: flex-end; gap: 8px;
   border-top: 1px solid var(--border); }
 .inputbar textarea { flex: 1; resize: none; border: none; background: var(--input); color: var(--text);

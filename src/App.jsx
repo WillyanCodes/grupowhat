@@ -547,6 +547,8 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
       const [canCall, setCanCall] = useState(true); // permissão de chamada DESTE usuário
         const [callCount, setCallCount] = useState(0); // quantos estão na chamada agora
         const [gptBusy, setGptBusy] = useState(false); // já respondendo? (evita duplicar)
+        const [typing, setTyping] = useState([]); // quem está digitando agora
+        const typingSent = useRef(false); // throttle do aviso de digitação
         const messagesEnd = useRef(null);
 
         // carrega a permissão de chamada individual
@@ -572,6 +574,24 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
               .subscribe();
             return () => { clearInterval(iv); supabase.removeChannel(ch); };
           }, [group.id]);
+
+    // quem está digitando agora — polling 2s (tabela typing; some sozinho após 3s)
+    useEffect(() => {
+      const load = async () => {
+        const cutoff = new Date(Date.now() - 3000).toISOString();
+        const { data } = await supabase.from('typing')
+          .select('user_id, name')
+          .eq('group_id', group.id).gt('updated_at', cutoff);
+        setTyping((data || []).filter((t) => t.user_id !== user.id));
+      };
+      load();
+      const iv = setInterval(load, 2000);
+      const ch = supabase.channel(`typing:${group.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'typing', filter: `group_id=eq.${group.id}` },
+          () => load())
+        .subscribe();
+      return () => { clearInterval(iv); supabase.removeChannel(ch); };
+    }, [group.id, user.id]);
 
     // screenshot deterrent: detect PrintScreen key + visibility change
     useEffect(() => {
@@ -613,6 +633,9 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     const text = (msg.content || '').toLowerCase();
     if (!text.includes('@gpt')) return;
     setGptBusy(true);
+    // bot "digitando" enquanto responde
+    supabase.rpc('set_typing', { gid: group.id, p_user: '00000000-0000-0000-0000-000000000000', p_name: '🤖 GPT' })
+      .then(() => {}, () => {});
     try {
       let imageUrl = null;
       if (msg.kind === 'image' && msg.media_url) imageUrl = msg.media_url;
@@ -951,6 +974,16 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         </div>
       )}
 
+      {typing.length > 0 && (
+        <div className="typing-bar">
+          <span className="typing-dots"><i /><i /><i /></span>
+          <span className="typing-text">
+            {typing.length === 1 ? `${typing[0].name} está digitando…`
+             : `${typing.slice(0, 2).map((t) => t.name).join(', ')}${typing.length > 2 ? ` e +${typing.length - 2}` : ''} estão digitando…`}
+          </span>
+        </div>
+      )}
+
       {lockedForMe ? (
         <div className="locked-bar">🔒 Somente o criador pode enviar mensagem neste grupo</div>
       ) : (
@@ -959,7 +992,16 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         <button type="button" className="atc" onClick={() => fileRef.current?.click()}>📎</button>
         {!recording && <button type="button" className="atc rec-btn" onClick={startRec}>🎤</button>}
         <textarea rows={1} placeholder="Mensagem" value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            // avisa que estou digitando (throttle: no máx 1x por 2s)
+            if (e.target.value && !typingSent.current) {
+              typingSent.current = true;
+              supabase.rpc('set_typing', { gid: group.id, p_user: user.id, p_name: profile || user.email?.split('@')[0] })
+                .then(() => {}, () => {});
+              setTimeout(() => { typingSent.current = false; }, 2000);
+            }
+          }}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
         <button type="submit" className="snd" disabled={!text.trim()}>➤</button>
       </form>
