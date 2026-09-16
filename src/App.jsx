@@ -1797,7 +1797,7 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
             <div className="muted" style={{ marginTop: 14 }}>🤖 Personalidade do bot @gpt (vale pra todos os grupos)</div>
             <textarea className="input" rows={3} style={{ resize: 'vertical', width: '100%' }}
               placeholder="Ex.: Você é um amigozão descontraído, responde curto, usa gírias brasileiras, adora emojis e chama todo mundo de mano."
-              value={persona} maxLength={600}
+              value={persona} maxLength={4000}
               onChange={(e) => setPersona(e.target.value)} />
           </>
         )}
