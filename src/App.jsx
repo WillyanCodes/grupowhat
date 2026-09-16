@@ -154,6 +154,8 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
+// marcador de versão do bundle (debug: se você ver "v7" no rodapé, o bundle novo está rodando)
+const VersionMark = () => <div style={{ position: 'fixed', bottom: 2, right: 4, fontSize: 9, opacity: 0.25, color: 'var(--muted)', zIndex: 1 }}>v7</div>;
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -194,7 +196,10 @@ export default function App() {
   else if (!session) body = <AuthScreen />;
   else body = <Main key={session.user.id} user={session.user} profile={profile} setProfile={setProfile} />;
 
-  return <ErrorBoundary>{body}</ErrorBoundary>;
+  return <>
+    <ErrorBoundary>{body}</ErrorBoundary>
+    <VersionMark />
+  </>;
 }
 
 /* ============ EMOJI APPLE (troca emojis por imagens da Apple em qualquer aparelho) ============ */
