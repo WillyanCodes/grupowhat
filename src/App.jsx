@@ -75,7 +75,7 @@ function SystemCard({ m, isOwner, onDecide, onJoinCall, callCount }) {
   if (m.system_type === 'join_request') {
     return (
       <div className="sys-card">
-        <div className="sys-text">🔔 {m.author_name || 'Alguém'} quer entrar no grupo</div>
+        <div className="sys-text"><AppleEmoji text={'🔔 ' + (m.author_name || 'Alguém')} size={14} /> quer entrar no grupo</div>
         {isOwner && (
           <div className="sys-actions">
             <button className="btn ghost ok" onClick={() => onDecide(m.target_user_id, true)}>✓ Permitir</button>
@@ -86,13 +86,13 @@ function SystemCard({ m, isOwner, onDecide, onJoinCall, callCount }) {
     );
   }
   if (m.system_type === 'member_joined') {
-    return <div className="sys-card">👋 {m.author_name || 'Novo membro'} entrou no grupo</div>;
+    return <div className="sys-card"><AppleEmoji text={'👋 ' + (m.author_name || 'Novo membro')} size={14} /> entrou no grupo</div>;
   }
   if (m.system_type === 'group_locked') {
-    return <div className="sys-card">🔒 {m.author_name || 'Admin'} travou o grupo — somente ele pode enviar mensagem agora</div>;
+    return <div className="sys-card"><AppleEmoji text={'🔒 ' + (m.author_name || 'Admin')} size={14} /> travou o grupo — somente ele pode enviar mensagem agora</div>;
   }
   if (m.system_type === 'group_unlocked') {
-    return <div className="sys-card">🔓 {m.author_name || 'Admin'} liberou o grupo — todos podem enviar mensagem normalmente</div>;
+    return <div className="sys-card"><AppleEmoji text={'🔓 ' + (m.author_name || 'Admin')} size={14} /> liberou o grupo — todos podem enviar mensagem normalmente</div>;
   }
   if (m.system_type === 'call_started') {
     // chamada vazia/encerrada → card some; fica só o "encerrou a chamada"
@@ -100,14 +100,14 @@ function SystemCard({ m, isOwner, onDecide, onJoinCall, callCount }) {
     const isVid = (m.content || '').includes('vídeo');
     return (
       <div className="sys-card call-card">
-        <div className="sys-text">📞 {m.author_name || 'Alguém'} iniciou uma chamada de {isVid ? 'vídeo 📹' : 'voz 📞'}</div>
-        <div className="sys-text muted" style={{ fontSize: 12 }}>🎧 {callCount || 0} na chamada agora</div>
-        <button className="btn" style={{ marginTop: 4 }} onClick={() => onJoinCall(isVid ? 'video' : 'voice')}>📲 Entrar na chamada</button>
+        <div className="sys-text"><AppleEmoji text={'📞 ' + (m.author_name || 'Alguém')} size={14} /> iniciou uma chamada de {isVid ? <AppleEmoji text="vídeo 📹" size={14} /> : <AppleEmoji text="voz 📞" size={14} />}</div>
+        <div className="sys-text muted" style={{ fontSize: 12 }}><AppleEmoji text={'🎧 ' + (callCount || 0)} size={13} /> na chamada agora</div>
+        <button className="btn" style={{ marginTop: 4 }} onClick={() => onJoinCall(isVid ? 'video' : 'voice')}><AppleEmoji text="📲" size={14} /> Entrar na chamada</button>
       </div>
     );
   }
   if (m.system_type === 'call_ended') {
-    return <div className="sys-card">📵 {m.author_name || 'Alguém'} encerrou a chamada</div>;
+    return <div className="sys-card"><AppleEmoji text={'📵 ' + (m.author_name || 'Alguém')} size={14} /> encerrou a chamada</div>;
   }
   return null;
 }
@@ -197,6 +197,63 @@ export default function App() {
   return <ErrorBoundary>{body}</ErrorBoundary>;
 }
 
+/* ============ EMOJI APPLE (troca emojis por imagens da Apple em qualquer aparelho) ============ */
+const APPLE_CDN = 'https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/apple/64/';
+const emojiToApple = (emoji) => {
+  try {
+    const cp = [...emoji].map((c) => c.codePointAt(0).toString(16).padStart(4, '0')).join('-');
+    return `${APPLE_CDN}${cp}.png`;
+  } catch { return null; }
+};
+const EMOJI_RE = /(\p{Extended_Pictographic}[\uFE0F\u200D\u20E3]*|\p{Extended_Pictographic})/gu;
+function AppleEmoji({ text = '', size = 18, className = '' }) {
+  const parts = [];
+  let last = 0;
+  for (const m of text.matchAll(EMOJI_RE)) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const url = emojiToApple(m[0]);
+    if (url) parts.push(<img key={m.index} src={url} alt={m[0]} className={`apple-emoji ${className}`} style={{ width: size, height: size }} draggable={false} />);
+    else parts.push(m[0]);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+}
+/* ============ FIM EMOJI APPLE ============ */
+
+/* ============ MARKDOWN simples (pro bot responder bonito: negrito, itálico, listas, trechos) ============ */
+function Md({ text = '' }) {
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const inline = (s) => s
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/\*([^*]+)\*/g, '<i>$1</i>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  const lines = String(text).split('\n');
+  const out = [];
+  let list = null;
+  const closeList = () => { if (list) { out.push(`</div>`); list = null; } };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (/^[-*]\s+/.test(line)) {
+      if (!list) { list = true; out.push('<div class="md-list">'); }
+      out.push(`<div class="md-li">• ${inline(esc(line.replace(/^[-*]\s+/, '')))}</div>`);
+      continue;
+    }
+    closeList();
+    if (/^>\s?/.test(line)) {
+      out.push(`<div class="md-quote">${inline(esc(line.replace(/^>\s?/, '')))}</div>`);
+    } else if (!line) {
+      out.push('<div class="md-spacer"></div>');
+    } else {
+      out.push(`<div>${inline(esc(line))}</div>`);
+    }
+  }
+  closeList();
+  return <div className="md-body" dangerouslySetInnerHTML={{ __html: out.join('') }} />;
+}
+/* ============ FIM MARKDOWN ============ */
+
+const BOT_ID = '00000000-0000-0000-0000-000000000000'; // id fixo do bot 🤖 GPT
 /* ============ AUTH ============ */
 function AuthScreen() {
   const [mode, setMode] = useState('login');
@@ -881,15 +938,15 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
           onClick={() => {
             if (group.owner_id !== user.id && !canCall) { toast('📵 O criador bloqueou chamadas pra você', true); return; }
             setCall('voice');
-          }}>📞</button>
+          }}><AppleEmoji text="📞" size={17} /></button>
         <button className="icon-btn" title={!canCall ? 'Você não pode iniciar chamadas (criador bloqueou)' : 'Chamada de vídeo'}
           onClick={() => {
             if (group.owner_id !== user.id && !canCall) { toast('📵 O criador bloqueou chamadas pra você', true); return; }
             setCall('video');
-          }}>📹</button>
+          }}><AppleEmoji text="📹" size={17} /></button>
         <button className="icon-btn" title="Sair do grupo" onClick={() => {
           if (confirm('Sair deste grupo?')) onLeft();
-        }}>🚪</button>
+        }}><AppleEmoji text="🚪" size={17} /></button>
       </div>
 
       <div className="messages">
@@ -942,7 +999,13 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                 {m.kind === 'file' && (
                   <div className="body"><a href={m.media_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent2)' }}>📎 Arquivo</a></div>
                 )}
-                {m.content && <div className="body">{m.content}</div>}
+                {m.content && (
+                  <div className="body">
+                    {m.author_name === '🤖 GPT' || m.user_id === BOT_ID
+                      ? <Md text={m.content} />
+                      : <AppleEmoji text={m.content} size={16} />}
+                  </div>
+                )}
                 <span className="time">
                   {fmtTime(m.created_at)}
                   {m.user_id === user.id ? ' ✓✓' : ''}
@@ -990,14 +1053,14 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         <div className="typing-bar">
           <span className="typing-dots"><i /><i /><i /></span>
           <span className="typing-text">
-            {typing.length === 1 ? `${typing[0].name} está digitando…`
-             : `${typing.slice(0, 2).map((t) => t.name).join(', ')}${typing.length > 2 ? ` e +${typing.length - 2}` : ''} estão digitando…`}
+            {typing.length === 1 ? <AppleEmoji text={`${typing[0].name} está digitando…`} size={12} />
+             : <AppleEmoji text={`${typing.slice(0, 2).map((t) => t.name).join(', ')}${typing.length > 2 ? ` e +${typing.length - 2}` : ''} estão digitando…`} size={12} />}
           </span>
         </div>
       )}
 
       {lockedForMe ? (
-        <div className="locked-bar">🔒 Somente o criador pode enviar mensagem neste grupo</div>
+        <div className="locked-bar"><AppleEmoji text="🔒" size={14} /> Somente o criador pode enviar mensagem neste grupo</div>
       ) : (
       <form className="inputbar" onSubmit={send}>
         <input ref={fileRef} type="file" hidden accept="image/*,video/*,audio/*" onChange={onPickFile} />

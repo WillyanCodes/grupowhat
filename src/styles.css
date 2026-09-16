@@ -192,6 +192,17 @@ input, textarea { font-family: inherit; }
 .one-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: rgba(0,0,0,0.35); color: #fff; font-size: 13px; font-weight: 700; text-align: center; line-height: 1.5; }
 
+/* Emoji Apple + markdown do bot */
+.apple-emoji { display: inline-block; vertical-align: -3px; margin: 0 1px; }
+.md-body { line-height: 1.55; }
+.md-body b { font-weight: 700; }
+.md-body i { font-style: italic; }
+.md-body code { background: rgba(127,127,127,.15); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+.md-list { margin: 4px 0; }
+.md-li { margin: 2px 0; padding-left: 4px; }
+.md-quote { border-left: 3px solid var(--accent); padding-left: 8px; color: var(--muted); margin: 4px 0; }
+.md-spacer { height: 6px; }
+
 /* Input bar */
 .typing-bar { padding: 4px 14px; background: var(--panel); display: flex; align-items: center; gap: 8px;
   border-top: 1px solid var(--border); font-size: 12.5px; color: var(--muted); }
