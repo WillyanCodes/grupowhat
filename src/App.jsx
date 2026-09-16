@@ -142,7 +142,13 @@ class ErrorBoundary extends Component {
 
 export default function App() {
   const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfileRaw] = useState(() => {
+    try { return localStorage.getItem('gw_nick') || null; } catch (_) { return null; }
+  });
+  const setProfile = (n) => {
+    try { if (n) localStorage.setItem('gw_nick', n); else localStorage.removeItem('gw_nick'); } catch (_) {}
+    setProfileRaw(n);
+  };
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -1312,6 +1318,8 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
     try {
       if (name.trim()) {
         await supabase.auth.updateUser({ data: { display_name: name.trim() } });
+        // atualiza as mensagens ANTIGAS desse usuário com o novo nome
+        await supabase.rpc('update_my_messages', { p_display: name.trim() });
         setProfile(name.trim());
         toast('Nome salvo ✔');
       }
@@ -1338,8 +1346,9 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
           <button className={`btn ${mode === 'dark' ? '' : 'ghost'}`} onClick={() => { setMode('dark'); apply(theme, 'dark'); }}>🌙 Escuro</button>
           <button className={`btn ${mode === 'light' ? '' : 'ghost'}`} onClick={() => { setMode('light'); apply(theme, 'light'); }}>☀️ Claro</button>
         </div>
-        <div className="muted" style={{ marginTop: 12 }}>Seu nome no app</div>
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="muted" style={{ marginTop: 12 }}>✏️ Seu nome / nick (aparece pros outros)</div>
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={30}
+          placeholder={profile || 'Digite seu nick'} />
         <div className="actions">
           <button className="btn ghost" onClick={onClose}>Fechar</button>
           <button className="btn" onClick={saveName}>Salvar</button>
