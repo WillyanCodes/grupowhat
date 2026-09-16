@@ -372,7 +372,7 @@ function Main({ user, profile, setProfile }) {
       {showSettings && <SettingsModal user={user} profile={profile} setProfile={setProfile}
         onClose={() => setShowSettings(false)} />}
       {showNotifs && admin && (
-        <NotifsModal notifs={notifs} groups={groups} onClose={() => setShowNotifs(false)}
+        <NotifsModal notifs={notifs} setNotifs={setNotifs} groups={groups} onClose={() => setShowNotifs(false)}
           onOpenGroup={(gid) => {
             const g = groups.find((x) => x.id === gid);
             if (g) { setActive(g); setMobileView('chat'); }
@@ -653,12 +653,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     try {
       if (ok) {
         await supabase.rpc('approve_member', { gid: group.id, uid });
-        // aviso de novo membro no grupo (mensagem de sistema visível pra todos)
-        const p = profile || user.email?.split('@')[0];
-        await supabase.from('messages').insert({
-          group_id: group.id, user_id: user.id, kind: 'system', system_type: 'member_joined',
-          content: 'Novo membro entrou', author_name: p, target_user_id: uid,
-        });
+        // quem insere o card "entrou no grupo" é a trigger do banco (evita duplicar)
         toast('Membro aprovado ✔');
       } else {
         await supabase.rpc('reject_member', { gid: group.id, uid });
@@ -1188,11 +1183,13 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
   );
 }
 
-function NotifsModal({ notifs, groups, onClose, onOpenGroup, onChanged }) {
+function NotifsModal({ notifs, setNotifs, groups, onClose, onOpenGroup, onChanged }) {
   const act = async (nid, gid, uid, action) => {
     try {
       if (action === 'approve') await supabase.rpc('approve_member', { gid, uid });
       else await supabase.rpc('reject_member', { gid, uid });
+      // remove a notificação da lista (some ao decidir) — a trigger do banco também limpa
+      setNotifs((ns) => ns.filter((n) => n.id !== nid));
       toast(action === 'approve' ? 'Membro aprovado ✔' : 'Pedido recusado');
       onChanged();
     } catch (err) { console.error(err); toast('Erro na ação', true); }
