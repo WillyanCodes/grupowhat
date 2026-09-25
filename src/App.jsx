@@ -615,7 +615,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
             </div>
           </>}
           <div className="avatar-wrap" onClick={() => setMenuOpen((v) => !v)}>
-            <Avatar name={profile || user.email} size={36} />
+            <Avatar name={profile || user.email} url={user.user_metadata?.avatar_url} size={36} />
           </div>
           {menuOpen && (
             <div className="menu-pop">
@@ -712,6 +712,10 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         const [typing, setTyping] = useState([]); // quem está digitando agora
         const typingSent = useRef(false); // throttle do aviso de digitação
         const messagesEnd = useRef(null);
+        const scrollBoxRef = useRef(null); // container que realmente rola (.messages)
+        const stickToBottomRef = useRef(true); // usuário está "grudado" no fim da conversa?
+        const prevGroupIdRef = useRef(group.id);
+        const [unseenCount, setUnseenCount] = useState(0); // bolinha estilo WhatsApp
 
         // carrega a permissão de chamada individual
         useEffect(() => {
@@ -790,9 +794,42 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     return () => supabase.removeChannel(sub);
   }, [group.id, pending]);
 
+  const isNearBottom = () => {
+    const el = scrollBoxRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  };
+
+  const scrollToBottom = (smooth = true) => {
+    messagesEnd.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+    setUnseenCount(0);
+  };
+
+  // acompanha o scroll manual do usuário pra saber se ele está "grudado" no fim
+  const onMessagesScroll = () => {
+    const atBottom = isNearBottom();
+    stickToBottomRef.current = atBottom;
+    if (atBottom) setUnseenCount(0);
+  };
+
   useEffect(() => {
-    messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, hidden]);
+    if (!messages.length) return;
+    const groupChanged = prevGroupIdRef.current !== group.id;
+    prevGroupIdRef.current = group.id;
+    if (groupChanged) {
+      // trocou de conversa: sempre pula direto pro fim, sem contador
+      stickToBottomRef.current = true;
+      requestAnimationFrame(() => scrollToBottom(false));
+      return;
+    }
+    const last = messages[messages.length - 1];
+    const isMine = last.user_id === user.id;
+    if (stickToBottomRef.current || isMine) {
+      scrollToBottom(true);
+    } else {
+      setUnseenCount((c) => c + 1);
+    }
+  }, [messages]);
 
   // pergunta pro bot @gpt (só responde se mencionar @gpt) — via endpoint /api/gpt (Groq, chave escondida)
   const askGpt = async (msg) => {
@@ -1079,7 +1116,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         }}><AppleEmoji text="🚪" size={17} /></button>
       </div>
 
-      <div className="messages">
+      <div className="messages" ref={scrollBoxRef} onScroll={onMessagesScroll}>
         {visible.map((m, i) => {
           const prev = visible[i - 1];
           const showDay = !prev || fmtDay(m.created_at) !== fmtDay(prev.created_at);
@@ -1156,6 +1193,14 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         })}
         <div ref={messagesEnd} />
       </div>
+
+      {unseenCount > 0 && (
+        <button className="jump-bottom-badge" onClick={() => scrollToBottom(true)}
+          title="Ir para o fim da conversa">
+          <span className="jb-arrow">↓</span>
+          <span className="jb-count">{unseenCount > 99 ? '99+' : unseenCount}</span>
+        </button>
+      )}
 
       {recording && (
         <div className="rec-bar">
@@ -1281,37 +1326,97 @@ function CallOverlay({ kind, group, user, onEnd }) {
   const [left, setLeft] = useState(false);
 
   useEffect(() => {
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    // STUN + TURN de fallback (openrelay/metered — gratuito, útil quando STUN sozinho não atravessa o NAT/firewall)
+    const iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:openrelay.metered.ca:80' },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    ];
+    const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
     const wantVideo = kind === 'video';
+    // quem é o dono do grupo "vence" em caso de as duas pontas mandarem oferta ao mesmo tempo (perfect negotiation)
+    const polite = user.id !== group.owner_id;
+    let makingOffer = false;
+    let ignoreOffer = false;
+
     // marca que a chamada está ativa no grupo (trigger gera o card no chat) — via RPC p/ qualquer membro
     supabase.rpc('set_call_state', { gid: group.id, p_active: true, p_kind: kind }).then(() => {}, () => {});
     // registra presença na tabela (RPC)
     const myName = user.user_metadata?.display_name || user.email || 'Alguém';
     supabase.rpc('join_call', { gid: group.id, p_name: myName }).then(() => {}, () => {});
 
+    const ch = supabase.channel(`call:${group.id}`);
+    chRef.current = ch;
+
+    // envia cada candidato ICE assim que descoberto (antes disso, o áudio/vídeo remoto nunca chegava)
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate) ch.send({ type: 'broadcast', event: 'signal', payload: { candidate } });
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') setStatus('Conectado');
+      else if (pc.connectionState === 'connecting') setStatus('Conectando…');
+      else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') setStatus('Reconectando…');
+    };
+
+    pc.ontrack = (ev) => {
+      const el = document.getElementById('remote-media');
+      if (el) {
+        el.srcObject = ev.streams[0];
+        el.play().catch(() => {});
+        // trava o áudio remoto: botão pra pausar/retomar
+        el.muted = remoteMuted;
+      }
+    };
+
+    // dispara automaticamente sempre que uma track é adicionada (ou renegociação é necessária)
+    pc.onnegotiationneeded = async () => {
+      try {
+        makingOffer = true;
+        await pc.setLocalDescription();
+        ch.send({ type: 'broadcast', event: 'signal', payload: { desc: pc.localDescription } });
+      } catch (err) { console.error(err); }
+      finally { makingOffer = false; }
+    };
+
+    ch.on('broadcast', { event: 'signal' }, async ({ payload }) => {
+      try {
+        // um peer novo acabou de entrar na sala de sinalização: reenvia/renegocia pra ele não perder nada
+        if (payload.hello) {
+          if (pc.localDescription) pc.restartIce();
+          return;
+        }
+        if (payload.candidate) {
+          try { await pc.addIceCandidate(payload.candidate); }
+          catch (err) { if (!ignoreOffer) throw err; }
+          return;
+        }
+        const desc = payload.desc;
+        if (!desc) return;
+        const offerCollision = desc.type === 'offer' && (makingOffer || pc.signalingState !== 'stable');
+        ignoreOffer = !polite && offerCollision;
+        if (ignoreOffer) return;
+        await pc.setRemoteDescription(desc);
+        if (desc.type === 'offer') {
+          await pc.setLocalDescription();
+          ch.send({ type: 'broadcast', event: 'signal', payload: { desc: pc.localDescription } });
+        }
+      } catch (err) { console.error(err); }
+    }).subscribe((status) => {
+      // avisa quem já estava na chamada que alguém novo chegou (pra ele renegociar e reenviar tudo)
+      if (status === 'SUBSCRIBED') ch.send({ type: 'broadcast', event: 'signal', payload: { hello: true } });
+    });
+
     navigator.mediaDevices.getUserMedia({ video: wantVideo, audio: true })
       .then((s) => {
         streamRef.current = s;
-        s.getTracks().forEach((t) => pc.addTrack(t, s));
+        s.getTracks().forEach((t) => pc.addTrack(t, s)); // dispara onnegotiationneeded
         const el = document.getElementById('local-media');
         if (wantVideo && el) { el.srcObject = s; el.play().catch(() => {}); }
-        setStatus('Conectado');
       }).catch(() => setStatus('Sem câmera/micro — chamada em silêncio'));
-
-    const ch = supabase.channel(`call:${group.id}`);
-    chRef.current = ch;
-    ch.on('broadcast', { event: 'signal' }, async ({ payload }) => {
-      try {
-        await pc.setRemoteDescription(payload.desc);
-        if (payload.desc.type === 'offer') {
-          const ans = await pc.createAnswer();
-          await pc.setLocalDescription(ans);
-          ch.send({ type: 'broadcast', event: 'signal', payload: { desc: ans } });
-          setStatus('Conectado');
-        } else { setStatus('Conectado'); }
-      } catch (err) { console.error(err); }
-    }).subscribe();
 
     // lista de quem está na chamada via tabela (realtime + polling 4s)
     const loadPeers = async () => {
@@ -1326,24 +1431,7 @@ function CallOverlay({ kind, group, user, onEnd }) {
         () => loadPeers())
       .subscribe();
 
-    const t = setTimeout(async () => {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      ch.send({ type: 'broadcast', event: 'signal', payload: { desc: offer } });
-    }, 600);
-
-    pc.ontrack = (ev) => {
-      const el = document.getElementById('remote-media');
-      if (el) {
-        el.srcObject = ev.streams[0];
-        el.play().catch(() => {});
-        // trava o áudio remoto: botão pra pausar/retomar
-        el.muted = remoteMuted;
-      }
-    };
-
     return () => {
-      clearTimeout(t);
       clearInterval(iv);
       pc.close(); ch.unsubscribe(); ch2.unsubscribe();
       supabase.rpc('leave_call', { gid: group.id }).then(() => {}, () => {});
@@ -1508,7 +1596,22 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
   const load = async () => {
     const { data } = await supabase.from('group_members')
       .select('user_id, status, joined_at, can_call, can_gpt').eq('group_id', group.id);
-    setMembers((data || []).map((m) => ({ ...m, can_call: m.can_call !== false, can_gpt: m.can_gpt !== false })));
+    const list = data || [];
+    // busca nick + foto reais de cada membro na tabela profiles (pública/sincronizada)
+    const ids = list.map((m) => m.user_id).filter(Boolean);
+    let profMap = {};
+    if (ids.length) {
+      const { data: profs } = await supabase.from('profiles')
+        .select('id, display_name, avatar_url').in('id', ids);
+      profMap = Object.fromEntries((profs || []).map((p) => [p.id, p]));
+    }
+    setMembers(list.map((m) => ({
+      ...m,
+      can_call: m.can_call !== false,
+      can_gpt: m.can_gpt !== false,
+      display_name: profMap[m.user_id]?.display_name || null,
+      avatar_url: profMap[m.user_id]?.avatar_url || null,
+    })));
   };
 
   const kick = async (uid) => {
@@ -1622,10 +1725,12 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
         <div className="member-list">
           {members.map((m) => (
             <div key={m.user_id} className="member-item">
-              <Avatar name={m.user_id === user.id ? 'Você' : (m.user_id === group.owner_id ? 'Criador' : 'Membro')} size={34} />
+              <Avatar name={m.display_name || (m.user_id === user.id ? 'Você' : 'Membro')}
+                url={m.user_id === user.id ? (m.avatar_url || user.user_metadata?.avatar_url) : m.avatar_url}
+                size={34} />
               <div className="col">
                 <div className="gp-name" style={{ fontSize: 14 }}>
-                  {m.user_id === user.id ? 'Você' : (m.user_id === group.owner_id ? 'Criador' : 'Membro')}
+                  {m.user_id === user.id ? `${m.display_name || 'Você'} (você)` : (m.display_name || 'Membro')}
                 </div>
                 <div className="gp-meta">
                   {m.user_id === group.owner_id ? '👑' : m.status === 'pending' ? '⏳ Pendente' : '—'}
@@ -1728,8 +1833,30 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
   const [mode, setMode] = useState(() => { try { return localStorage.getItem('gw_mode') || 'dark'; } catch (_) { return 'dark'; } });
   const [name, setName] = useState(profile || '');
   const [persona, setPersona] = useState('');
+  const [myAvatar, setMyAvatar] = useState(user.user_metadata?.avatar_url || '');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarFileRef = useRef(null);
   // só o criador (admin) pode editar a personalidade do bot
   const isOwner = isAdmin(user.email);
+
+  const uploadMyAvatar = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setUploadingAvatar(true);
+    try {
+      const path = `avatars/user_${user.id}_${Date.now()}.${f.name.split('.').pop() || 'jpg'}`;
+      const { error } = await supabase.storage.from('media').upload(path, f);
+      if (error) { toast('Falha ao enviar a foto', true); return; }
+      const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+      const { error: upErr } = await supabase.auth.updateUser({ data: { avatar_url: url } });
+      if (upErr) { toast('Falha ao salvar a foto', true); return; }
+      setMyAvatar(url);
+      toast('Foto de perfil atualizada ✔');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   useEffect(() => {
     // carrega a personalidade atual do bot (global)
@@ -1773,6 +1900,14 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="settings-avatar-row">
+          <input ref={avatarFileRef} type="file" hidden accept="image/*" onChange={uploadMyAvatar} />
+          <div className="settings-avatar-pick" onClick={() => !uploadingAvatar && avatarFileRef.current?.click()}>
+            <Avatar name={name || profile || user.email} url={myAvatar} size={72} />
+            <div className="settings-avatar-edit">{uploadingAvatar ? '…' : '📷'}</div>
+          </div>
+          <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Toque na foto pra trocar</div>
+        </div>
         <div className="modal-icon">🎨</div>
         <h3>Aparência</h3>
         <div className="muted">Cor de destaque do app</div>
