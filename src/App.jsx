@@ -716,6 +716,25 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         const stickToBottomRef = useRef(true); // usuário está "grudado" no fim da conversa?
         const prevGroupIdRef = useRef(group.id);
         const [unseenCount, setUnseenCount] = useState(0); // bolinha estilo WhatsApp
+        const [memberProfiles, setMemberProfiles] = useState({}); // { user_id: { display_name, avatar_url } } — pra mostrar foto na mensagem
+
+        // carrega foto+nick de todo mundo do grupo (pra avatar nas mensagens, estilo Instagram/WhatsApp)
+        useEffect(() => {
+          let cancelled = false;
+          const loadProfiles = async () => {
+            const { data: gm } = await supabase.from('group_members').select('user_id').eq('group_id', group.id);
+            const ids = (gm || []).map((r) => r.user_id).filter(Boolean);
+            if (!ids.length) return;
+            const { data: profs } = await supabase.from('profiles').select('id, display_name, avatar_url').in('id', ids);
+            if (cancelled) return;
+            setMemberProfiles(Object.fromEntries((profs || []).map((p) => [p.id, p])));
+          };
+          loadProfiles();
+          const ch = supabase.channel(`profiles:${group.id}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => loadProfiles())
+            .subscribe();
+          return () => { cancelled = true; supabase.removeChannel(ch); };
+        }, [group.id]);
 
         // carrega a permissão de chamada individual
         useEffect(() => {
@@ -1133,11 +1152,24 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
               </React.Fragment>
             );
           }
+          const next = visible[i + 1];
+          const isLastInRun = !next || next.user_id !== m.user_id || next.system_type;
+          const isIncoming = m.user_id !== user.id;
+          const senderProf = memberProfiles[m.user_id];
           return (
             <React.Fragment key={m.id}>
               {showDay && <div className="day-divider">{fmtDay(m.created_at)}</div>}
-              <div className={`msg ${m.user_id === user.id ? 'out' : 'in'}`}
-                onContextMenu={(e) => { e.preventDefault(); setMenuMsg(m.id); }}>
+              <div className={`msg-row ${isIncoming ? 'in' : 'out'}`}>
+                {isIncoming && (
+                  <div className="msg-row-avatar">
+                    {isLastInRun && (
+                      <Avatar name={m.author_name || senderProf?.display_name || 'Alguém'}
+                        url={senderProf?.avatar_url} size={28} />
+                    )}
+                  </div>
+                )}
+                <div className={`msg ${isIncoming ? 'in' : 'out'}`}
+                  onContextMenu={(e) => { e.preventDefault(); setMenuMsg(m.id); }}>
                 {m.user_id !== user.id && <div className="author">{m.author_name || 'Alguém'}</div>}
                 {m.one_view && m.user_id === user.id && (
                   <div className="one-badge">🕐 Visualização única{viewed.has(m.id) ? ' · vista' : ''}</div>
@@ -1187,6 +1219,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                     <button onClick={() => forwardMsg(m)}>➡️ Encaminhar</button>
                   </div>
                 )}
+                </div>
               </div>
             </React.Fragment>
           );
