@@ -710,6 +710,19 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     const [oneView, setOneView] = useState(null);
     const [shotWarned, setShotWarned] = useState(false);
     const [replying, setReplying] = useState(null); // msg que está sendo respondida
+    const [canCall, setCanCall] = useState(true); // permissão de chamada DESTE usuário
+    const [callCount, setCallCount] = useState(0); // quantos estão na chamada agora
+    const [gptBusy, setGptBusy] = useState(false); // já respondendo? (evita duplicar)
+    const [typing, setTyping] = useState([]); // quem está digitando agora
+    const typingSent = useRef(false); // throttle do aviso de digitação
+    const messagesEnd = useRef(null);
+    const scrollBoxRef = useRef(null); // container que realmente rola (.messages)
+    const stickToBottomRef = useRef(true); // usuário está "grudado" no fim da conversa?
+    const prevGroupIdRef = useRef(group.id);
+    const [unseenCount, setUnseenCount] = useState(0); // bolinha estilo WhatsApp
+    const [memberProfiles, setMemberProfiles] = useState({}); // { user_id: { display_name, avatar_url } } — pra mostrar foto na mensagem
+    const [reactions, setReactions] = useState({}); // { message_id: { emoji: Set(user_id) } }
+    const [reactPickerMsg, setReactPickerMsg] = useState(null); // id da msg com o seletor de emoji aberto
 
   // fecha o menu de contexto ao clicar fora ou apertar Esc
   useEffect(() => {
@@ -750,19 +763,6 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [menuMsg, onBack]);
-      const [canCall, setCanCall] = useState(true); // permissão de chamada DESTE usuário
-        const [callCount, setCallCount] = useState(0); // quantos estão na chamada agora
-        const [gptBusy, setGptBusy] = useState(false); // já respondendo? (evita duplicar)
-        const [typing, setTyping] = useState([]); // quem está digitando agora
-        const typingSent = useRef(false); // throttle do aviso de digitação
-        const messagesEnd = useRef(null);
-        const scrollBoxRef = useRef(null); // container que realmente rola (.messages)
-        const stickToBottomRef = useRef(true); // usuário está "grudado" no fim da conversa?
-        const prevGroupIdRef = useRef(group.id);
-        const [unseenCount, setUnseenCount] = useState(0); // bolinha estilo WhatsApp
-        const [memberProfiles, setMemberProfiles] = useState({}); // { user_id: { display_name, avatar_url } } — pra mostrar foto na mensagem
-        const [reactions, setReactions] = useState({}); // { message_id: { emoji: Set(user_id) } }
-        const [reactPickerMsg, setReactPickerMsg] = useState(null); // id da msg com o seletor de emoji aberto
 
         // carrega foto+nick de todo mundo do grupo (pra avatar nas mensagens, estilo Instagram/WhatsApp)
         useEffect(() => {
