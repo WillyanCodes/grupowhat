@@ -249,7 +249,8 @@ export default function App() {
       const th = localStorage.getItem('gw_theme') || 'green';
       const md = localStorage.getItem('gw_mode') || 'dark';
       document.body.classList.remove('light', ...THEMES.map((t) => 'theme-' + t.id));
-      document.body.classList.add(md === 'light' ? 'light' : '', 'theme-' + th);
+      if (md === 'light') document.body.classList.add('light');
+      document.body.classList.add('theme-' + th);
     } catch (_) {}
     startGlobalEmojiScanner();
   }, []);
@@ -328,6 +329,7 @@ function Md({ text = '' }) {
 /* ============ FIM MARKDOWN ============ */
 
 const BOT_ID = '00000000-0000-0000-0000-000000000000'; // id fixo do bot 🤖 GPT
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 /* ============ AUTH ============ */
 function AuthScreen() {
   const [mode, setMode] = useState('login');
@@ -427,11 +429,26 @@ function Main({ user, profile, setProfile }) {
   const [mobileView, setMobileView] = useState('list');
   const [notifs, setNotifs] = useState([]);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [lastSeen, setLastSeen] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gw_lastseen') || '{}'); } catch (_) { return {}; }
+  });
+  const markSeen = (gid, ts) => {
+    setLastSeen((prev) => {
+      const next = { ...prev, [gid]: ts || new Date().toISOString() };
+      try { localStorage.setItem('gw_lastseen', JSON.stringify(next)); } catch (_) {}
+      return next;
+    });
+  };
 
   useEffect(() => {
     const dn = user.user_metadata?.display_name;
     if (dn && !profile) setProfile(dn);
     loadGroups();
+    // atualiza a lista (última msg / ordem) quando chega mensagem nova em QUALQUER grupo — pra não precisar dar F5
+    const ch = supabase.channel('all-messages-preview')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => loadGroups())
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, []);
 
   const loadGroups = async () => {
@@ -443,11 +460,17 @@ function Main({ user, profile, setProfile }) {
       locked: r.locked, avatar_url: r.avatar_url, description: r.description,
       joined_at: r.joined_at, member_status: r.status || 'approved',
       calls_allowed: r.calls_allowed !== false, call_active: !!r.call_active,
+      last_message_at: r.last_message_at, last_message_preview: r.last_message_preview,
+      last_message_user_id: r.last_message_user_id,
     }));
-    list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     setGroups(list);
     setActive((cur) => cur ? list.find((g) => g.id === cur.id) || null : null);
   };
+
+  // se o grupo aberto recebe mensagem nova, mantém marcado como "visto" (não deixa a bolinha aparecer nele)
+  useEffect(() => {
+    if (active?.id && active?.last_message_at) markSeen(active.id, active.last_message_at);
+  }, [active?.id, active?.last_message_at]);
 
   const loadNotifs = async () => {
     if (!admin) return;
@@ -513,8 +536,8 @@ function Main({ user, profile, setProfile }) {
     <div className="app">
       <div className={`layout ${mobileView === 'chat' ? 'mobile-chat' : 'mobile-list'}`}>
         <Sidebar
-          groups={groups} active={active}
-          setActive={(g) => { setActive(g); setMobileView('chat'); }}
+          groups={groups} active={active} lastSeen={lastSeen}
+          setActive={(g) => { setActive(g); setMobileView('chat'); markSeen(g.id, g.last_message_at); }}
           admin={admin} user={user} profile={profile}
           notifs={notifs} onNotifs={() => setShowNotifs(true)}
           onNew={() => setShowCreate(true)}
@@ -597,7 +620,7 @@ function NameOnboarding({ user, onDone }) {
 }
 
 /* ============ SIDEBAR ============ */
-function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNotifs, onNew, onJoin, onSettings }) {
+function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNotifs, onNew, onJoin, onSettings, lastSeen }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState('');
   const filtered = groups.filter((g) =>
@@ -642,18 +665,29 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
             {!search && !admin && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Peça o número de um grupo pra alguém entrar.</span>}
           </div>
         )}
-        {filtered.map((g) => (
-          <div key={g.id} className={`group-item ${active?.id === g.id ? 'active' : ''}`}
-            onClick={() => setActive(g)}>
-            <Avatar name={g.name} url={g.avatar_url} />
-            <div className="col">
-              <div className="gp-name">{g.name}</div>
-              <div className="gp-meta">
-                {g.member_status === 'pending' ? '⏳ Aguardando aprovação' : (g.owner_id === user.id ? '👑 Seu grupo' : 'Grupo')}
+        {filtered.map((g) => {
+          const isUnread = !!g.last_message_at && g.last_message_user_id !== user.id
+            && (!lastSeen?.[g.id] || new Date(g.last_message_at) > new Date(lastSeen[g.id]));
+          const preview = g.member_status === 'pending'
+            ? '⏳ Aguardando aprovação'
+            : (g.last_message_preview
+                ? (g.last_message_user_id === user.id ? `Você: ${g.last_message_preview}` : g.last_message_preview)
+                : (g.owner_id === user.id ? '👑 Seu grupo · sem mensagens ainda' : 'Sem mensagens ainda'));
+          return (
+            <div key={g.id} className={`group-item ${active?.id === g.id ? 'active' : ''} ${isUnread ? 'unread' : ''}`}
+              onClick={() => setActive(g)}>
+              <Avatar name={g.name} url={g.avatar_url} />
+              <div className="col">
+                <div className="gp-name">{g.name}</div>
+                <div className="gp-meta">{preview}</div>
+              </div>
+              <div className="group-item-side">
+                {g.last_message_at && <span className="group-item-time">{fmtTime(g.last_message_at)}</span>}
+                {isUnread && <span className="unread-dot" />}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -694,6 +728,16 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', onKey); };
   }, [menuMsg]);
 
+  // fecha o seletor de reação ao clicar fora ou apertar Esc
+  useEffect(() => {
+    if (!reactPickerMsg) return;
+    const close = () => setReactPickerMsg(null);
+    const onKey = (e) => { if (e.key === 'Escape') setReactPickerMsg(null); };
+    document.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', onKey); };
+  }, [reactPickerMsg]);
+
   // Esc SEM o menu aberto → volta pra tela inicial (lista de grupos, igual WhatsApp)
   useEffect(() => {
     const onKey = (e) => {
@@ -717,6 +761,8 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         const prevGroupIdRef = useRef(group.id);
         const [unseenCount, setUnseenCount] = useState(0); // bolinha estilo WhatsApp
         const [memberProfiles, setMemberProfiles] = useState({}); // { user_id: { display_name, avatar_url } } — pra mostrar foto na mensagem
+        const [reactions, setReactions] = useState({}); // { message_id: { emoji: Set(user_id) } }
+        const [reactPickerMsg, setReactPickerMsg] = useState(null); // id da msg com o seletor de emoji aberto
 
         // carrega foto+nick de todo mundo do grupo (pra avatar nas mensagens, estilo Instagram/WhatsApp)
         useEffect(() => {
@@ -918,6 +964,42 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     });
     setHidden(h);
     setViewed(v);
+  };
+
+  // reações (👍❤️😂...) de TODO mundo do grupo — reusa a tabela message_events com kind = emoji
+  const fetchReactions = async () => {
+    const ids = messages.map((m) => m.id);
+    if (!ids.length) { setReactions({}); return; }
+    const { data } = await supabase.from('message_events')
+      .select('message_id, user_id, kind').in('message_id', ids).in('kind', REACTION_EMOJIS);
+    const map = {};
+    (data || []).forEach((e) => {
+      if (!map[e.message_id]) map[e.message_id] = {};
+      if (!map[e.message_id][e.kind]) map[e.message_id][e.kind] = new Set();
+      map[e.message_id][e.kind].add(e.user_id);
+    });
+    setReactions(map);
+  };
+  useEffect(() => {
+    if (!messages.length) { setReactions({}); return; }
+    fetchReactions();
+    const ch = supabase.channel(`reactions:${group.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_events' }, () => fetchReactions())
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [messages.length, group.id]);
+
+  const toggleReaction = async (messageId, emoji) => {
+    setReactPickerMsg(null);
+    const already = reactions[messageId]?.[emoji]?.has(user.id);
+    if (already) {
+      await supabase.from('message_events').delete()
+        .eq('message_id', messageId).eq('user_id', user.id).eq('kind', emoji);
+    } else {
+      await supabase.from('message_events')
+        .upsert({ message_id: messageId, user_id: user.id, kind: emoji }, { onConflict: 'message_id,user_id,kind' });
+    }
+    fetchReactions();
   };
 
   const insertMsg = async (payload) => {
@@ -1209,7 +1291,16 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                   {fmtTime(m.created_at)}
                   {m.user_id === user.id ? ' ✓✓' : ''}
                 </span>
+                <button className="msg-react-btn" title="Reagir"
+                  onClick={(e) => { e.stopPropagation(); setReactPickerMsg(reactPickerMsg === m.id ? null : m.id); }}>😊</button>
                 <button className="msg-menu-btn" onClick={() => setMenuMsg(menuMsg === m.id ? null : m.id)}>⋮</button>
+                {reactPickerMsg === m.id && (
+                  <div className={`react-picker ${isIncoming ? 'from-in' : 'from-out'}`} onClick={(e) => e.stopPropagation()}>
+                    {REACTION_EMOJIS.map((em) => (
+                      <button key={em} className="react-picker-emoji" onClick={() => toggleReaction(m.id, em)}>{em}</button>
+                    ))}
+                  </div>
+                )}
                 {menuMsg === m.id && (
                   <div ref={menuRef} className={`msg-menu ${m.user_id === user.id ? 'from-out' : 'from-in'}`} onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => hideMsg(m.id)}>🗑️ Apagar pra mim</button>
@@ -1217,6 +1308,16 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                     <button onClick={() => copyMsg(m)}>📋 Copiar</button>
                     <button onClick={() => replyTo(m)}>↩️ Responder</button>
                     <button onClick={() => forwardMsg(m)}>➡️ Encaminhar</button>
+                  </div>
+                )}
+                {!!reactions[m.id] && Object.keys(reactions[m.id]).length > 0 && (
+                  <div className="react-pills">
+                    {Object.entries(reactions[m.id]).filter(([, ids]) => ids.size > 0).map(([em, ids]) => (
+                      <button key={em} className={`react-pill ${ids.has(user.id) ? 'mine' : ''}`}
+                        onClick={() => toggleReaction(m.id, em)} title={`${ids.size} reação(ões)`}>
+                        {em} <span>{ids.size}</span>
+                      </button>
+                    ))}
                   </div>
                 )}
                 </div>
@@ -1707,7 +1808,7 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
 
   return (
     <div className="modal-back" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="gi-head">
           <Avatar name={name} url={avatarUrl} size={64} />
           {isOwner && (
@@ -1758,16 +1859,30 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
         <div className="member-list">
           {members.map((m) => (
             <div key={m.user_id} className="member-item">
-              <Avatar name={m.display_name || (m.user_id === user.id ? 'Você' : 'Membro')}
-                url={m.user_id === user.id ? (m.avatar_url || user.user_metadata?.avatar_url) : m.avatar_url}
-                size={34} />
-              <div className="col">
-                <div className="gp-name" style={{ fontSize: 14 }}>
-                  {m.user_id === user.id ? `${m.display_name || 'Você'} (você)` : (m.display_name || 'Membro')}
+              <div className="member-item-top">
+                <Avatar name={m.display_name || (m.user_id === user.id ? 'Você' : 'Membro')}
+                  url={m.user_id === user.id ? (m.avatar_url || user.user_metadata?.avatar_url) : m.avatar_url}
+                  size={38} />
+                <div className="col">
+                  <div className="gp-name">
+                    {m.user_id === user.id ? `${m.display_name || 'Você'} (você)` : (m.display_name || 'Membro')}
+                  </div>
+                  <div className="gp-meta">
+                    {m.user_id === group.owner_id ? '👑 Criador' : m.status === 'pending' ? '⏳ Pendente' : 'Membro'}
+                  </div>
                 </div>
-                <div className="gp-meta">
-                  {m.user_id === group.owner_id ? '👑' : m.status === 'pending' ? '⏳ Pendente' : '—'}
-                </div>
+                {isOwner && m.user_id !== user.id && (
+                  <>
+                    {m.status === 'pending' ? (
+                      <div className="member-actions">
+                        <button className="btn ghost ok" onClick={() => approve(m.user_id)}>✓</button>
+                        <button className="btn ghost danger" onClick={() => reject(m.user_id)}>✕</button>
+                      </div>
+                    ) : (
+                      <button className="btn ghost danger member-kick" onClick={() => kick(m.user_id)}>Expulsar</button>
+                    )}
+                  </>
+                )}
               </div>
               {isOwner && m.user_id !== user.id && m.status === 'approved' && (
                 <div className="member-call-perm" title="Permissões deste membro">
@@ -1788,18 +1903,6 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
                     }}
                   >🧠 {m.can_gpt ? 'Permitido' : 'Bloqueado'}</button>
                 </div>
-              )}
-              {isOwner && m.user_id !== user.id && (
-                <>
-                  {m.status === 'pending' ? (
-                    <div className="member-actions">
-                      <button className="btn ghost ok" onClick={() => approve(m.user_id)}>✓</button>
-                      <button className="btn ghost danger" onClick={() => reject(m.user_id)}>✕</button>
-                    </div>
-                  ) : (
-                    <button className="btn ghost danger" onClick={() => kick(m.user_id)}>Expulsar</button>
-                  )}
-                </>
               )}
             </div>
           ))}
@@ -1901,7 +2004,8 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
   const apply = (th, md) => {
     try {
       document.body.classList.remove('light', ...THEMES.map((t) => 'theme-' + t.id));
-      document.body.classList.add(md === 'light' ? 'light' : '', 'theme-' + th);
+      if (md === 'light') document.body.classList.add('light');
+      document.body.classList.add('theme-' + th);
       localStorage.setItem('gw_theme', th);
       localStorage.setItem('gw_mode', md);
     } catch (err) { console.error(err); }
