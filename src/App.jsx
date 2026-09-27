@@ -1616,11 +1616,14 @@ function CallOverlay({ kind, group, user, onEnd }) {
 
   return (
     <div className="call-overlay">
-      {kind === 'video' && (
+      {kind === 'video' ? (
         <div className="call-vid">
           <video id="remote-media" autoPlay playsInline />
           <video id="local-media" autoPlay playsInline muted className="local-vid" />
         </div>
+      ) : (
+        // chamada de voz: sem tela, mas precisa de um elemento pra TOCAR o áudio remoto (senão a pessoa fica muda)
+        <audio id="remote-media" autoPlay />
       )}
       <Avatar name={group.name} url={group.avatar_url} size={kind === 'video' ? 72 : 88} />
       <h2>{group.name}</h2>
