@@ -593,7 +593,7 @@ function Main({ user, profile, setProfile }) {
                 onBack={() => { setActive(null); setMobileView('list'); }}
                 onInfo={() => setShowInfo(true)}
                 onLeft={async () => { await leaveOrDelete(active.id); }} />
-            : <EmptyChat />}
+            : <EmptyChat onNew={() => setShowCreate(true)} onJoin={() => setShowJoin(true)} />}
         </div>
       </div>
 
@@ -616,12 +616,20 @@ function Main({ user, profile, setProfile }) {
   );
 }
 
-function EmptyChat() {
+function EmptyChat({ onNew, onJoin }) {
   return (
     <div className="empty">
-      <div className="empty-icon">💬</div>
+      <div className="empty-orb o1" /><div className="empty-orb o2" />
+      <div className="empty-icon-wrap">
+        <div className="empty-icon">💬</div>
+        <div className="empty-icon-ring" />
+      </div>
       <h2>GrupoWhat</h2>
-      <p>Escolha um grupo na lista ao lado<br />ou entre num grupo pelo número.</p>
+      <p>Escolha um grupo na lista ao lado<br />ou comece uma conversa nova agora mesmo.</p>
+      <div className="empty-actions">
+        <button className="btn" onClick={onNew}>➕ Criar grupo</button>
+        <button className="btn ghost" onClick={onJoin}>🔢 Entrar com número</button>
+      </div>
     </div>
   );
 }
@@ -671,7 +679,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
   return (
     <div className="sidebar">
       <header>
-        <div className="logo">💬 GrupoWhat</div>
+        <div className="logo"><span className="logo-badge">💬</span> GrupoWhat</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
           {admin && <>
                       <span className="crown" title="Admin">👑</span>
@@ -684,12 +692,15 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
             <Avatar name={profile || user.email} url={user.user_metadata?.avatar_url} size={36} />
           </div>
           {menuOpen && (
-            <div className="menu-pop">
-              <div className="menu-email">{user.email}</div>
-              <div className="menu-name">{(profile || 'Você') + (admin ? ' · 👑 Admin' : '')}</div>
-              <button className="btn ghost" onClick={() => { setMenuOpen(false); onSettings(); }}>🎨 Aparência</button>
-              <button className="btn ghost" onClick={async () => { setMenuOpen(false); await supabase.auth.signOut(); }}>🚪 Sair</button>
-            </div>
+            <>
+              <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
+              <div className="menu-pop" onClick={(e) => e.stopPropagation()}>
+                <div className="menu-email">{user.email}</div>
+                <div className="menu-name">{(profile || 'Você') + (admin ? ' · 👑 Admin' : '')}</div>
+                <button className="btn ghost" onClick={() => { setMenuOpen(false); onSettings(); }}>🎨 Aparência</button>
+                <button className="btn ghost" onClick={async () => { setMenuOpen(false); await supabase.auth.signOut(); }}>🚪 Sair</button>
+              </div>
+            </>
           )}
         </div>
       </header>
