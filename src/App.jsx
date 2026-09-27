@@ -14,6 +14,13 @@ const fmtTime = (t) => {
   if (!t) return '';
   return new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 };
+// horário "seguro": se a mensagem não for de hoje, mostra a data junto (evita confundir "ontem 8h" com "hoje 8h")
+const fmtTimeSafe = (t) => {
+  if (!t) return '';
+  const day = fmtDay(t);
+  const hm = fmtTime(t);
+  return day === 'Hoje' ? hm : `${day} ${hm}`;
+};
 const fmtDay = (t) => {
   if (!t) return '';
   const d = new Date(t);
@@ -1288,7 +1295,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                   </div>
                 )}
                 <span className="time">
-                  {fmtTime(m.created_at)}
+                  {fmtTimeSafe(m.created_at)}
                   {m.user_id === user.id ? ' ✓✓' : ''}
                 </span>
                 <button className="msg-react-btn" title="Reagir"
@@ -1565,11 +1572,23 @@ function CallOverlay({ kind, group, user, onEnd }) {
         () => loadPeers())
       .subscribe();
 
+    // se o banco marcar a chamada como encerrada (todo mundo saiu), fecha a tela sozinho pra quem ainda estiver nela
+    const ch3 = supabase.channel(`call-ended:${group.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'groups', filter: `id=eq.${group.id}` },
+        (payload) => { if (payload.new && payload.new.call_active === false) onEnd(); })
+      .subscribe();
+
+    // se ficar "Conectando…" tempo demais, é sinal de rede bloqueando WebRTC (wi-fi de trabalho/escola, etc.)
+    const stuckTimer = setTimeout(() => {
+      setStatus((s) => (s === 'Conectando…' ? 'Demorando… tente 4G/dados móveis se não conectar' : s));
+    }, 12000);
+
     return () => {
       clearInterval(iv);
-      pc.close(); ch.unsubscribe(); ch2.unsubscribe();
+      clearTimeout(stuckTimer);
+      pc.close(); ch.unsubscribe(); ch2.unsubscribe(); ch3.unsubscribe();
+      // só remove ESTE usuário da chamada — o banco decide sozinho se foi o último e encerra pra todo mundo
       supabase.rpc('leave_call', { gid: group.id }).then(() => {}, () => {});
-      supabase.rpc('set_call_state', { gid: group.id, p_active: false, p_kind: null }).then(() => {}, () => {});
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
     };
   }, []);
@@ -1587,8 +1606,8 @@ function CallOverlay({ kind, group, user, onEnd }) {
   const end = () => {
     pcRef.current?.close();
     streamRef.current?.getTracks().forEach((tr) => tr.stop());
+    // só sai da chamada — o banco (leave_call) já encerra pra todo mundo sozinho quando for o último a sair
     supabase.rpc('leave_call', { gid: group.id }).then(() => {}, () => {});
-    supabase.rpc('set_call_state', { gid: group.id, p_active: false, p_kind: null }).then(() => {}, () => {});
     onEnd();
   };
 
