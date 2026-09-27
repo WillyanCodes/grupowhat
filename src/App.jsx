@@ -345,6 +345,7 @@ function AuthScreen() {
   const [name, setName] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showPass, setShowPass] = useState(false);
 
   const doEmail = async (e) => {
     e.preventDefault();
@@ -377,34 +378,69 @@ function AuthScreen() {
 
   return (
     <div className="auth">
-      <div className="auth-bg" />
-      <div className="auth-card">
-        <div className="auth-logo">💬</div>
-        <h1>GrupoWhat</h1>
-        <div className="sub">Seus grupos, do seu jeito — grátis e sem limites</div>
-        <button type="button" className="btn google" onClick={doGoogle}>
-          <GLogo /> Continuar com Google
-        </button>
-        <div className="sep">ou</div>
-        <form onSubmit={doEmail}>
-          {mode === 'register' && (
-            <input className="input" placeholder="Seu nome (escolha à vontade)"
-              value={name} onChange={(e) => setName(e.target.value)} />
-          )}
-          <input className="input" type="email" placeholder="Seu email" value={email}
-            onChange={(e) => setEmail(e.target.value)} required />
-          <input className="input" type="password" placeholder="Sua senha" value={pass}
-            onChange={(e) => setPass(e.target.value)} required minLength={6} />
-          {mode === 'register' && <div className="hint">Senha de acesso do GrupoWhat (não é a senha do Gmail).</div>}
-          <div className="err">{err}</div>
-          <button type="submit" className="btn" disabled={busy}>
-            {busy ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
-          </button>
-        </form>
-        <button type="button" className="btn ghost" style={{ marginTop: 12 }}
-          onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr(''); }}>
-          {mode === 'login' ? 'Criar conta com email' : 'Já tenho conta — entrar'}
-        </button>
+      <div className="auth-shell">
+        {/* vitrine — só aparece em telas largas, dá personalidade sem atrapalhar o mobile */}
+        <div className="auth-showcase">
+          <div className="auth-orb o1" /><div className="auth-orb o2" /><div className="auth-orb o3" />
+          <div className="auth-showcase-inner">
+            <div className="auth-brand"><span className="auth-brand-icon">💬</span> GrupoWhat</div>
+            <h2>Seus grupos,<br />do seu jeito.</h2>
+            <p>Converse, ligue e compartilhe com quem importa — tudo num só lugar, grátis e sem limites.</p>
+            <div className="auth-feats">
+              <div className="auth-feat"><span>💬</span> Mensagens em tempo real</div>
+              <div className="auth-feat"><span>📞</span> Chamadas de voz e vídeo</div>
+              <div className="auth-feat"><span>🔒</span> Grupos privados, só quem você aprovar</div>
+            </div>
+            <div className="auth-float-bubbles">
+              <div className="fb fb1">Bora hoje à noite? 🎉</div>
+              <div className="fb fb2 mine">Partiu! 🙌</div>
+              <div className="fb fb3">😂😂😂</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="auth-panel">
+          <div className="auth-card">
+            <div className="auth-logo-mobile">💬</div>
+            <h1>{mode === 'login' ? 'Bem-vindo de volta' : 'Criar sua conta'}</h1>
+            <div className="sub">{mode === 'login' ? 'Entre pra continuar suas conversas' : 'Leva menos de 1 minuto'}</div>
+            <button type="button" className="btn google" onClick={doGoogle}>
+              <GLogo /> Continuar com Google
+            </button>
+            <div className="sep">ou com email</div>
+            <form onSubmit={doEmail}>
+              {mode === 'register' && (
+                <div className="field">
+                  <span className="field-icon">🙂</span>
+                  <input className="input has-icon" placeholder="Seu nome (escolha à vontade)"
+                    value={name} onChange={(e) => setName(e.target.value)} />
+                </div>
+              )}
+              <div className="field">
+                <span className="field-icon">✉️</span>
+                <input className="input has-icon" type="email" placeholder="Seu email" value={email}
+                  onChange={(e) => setEmail(e.target.value)} required />
+              </div>
+              <div className="field">
+                <span className="field-icon">🔒</span>
+                <input className="input has-icon has-icon-r" type={showPass ? 'text' : 'password'} placeholder="Sua senha" value={pass}
+                  onChange={(e) => setPass(e.target.value)} required minLength={6} />
+                <button type="button" className="field-toggle" onClick={() => setShowPass((v) => !v)} tabIndex={-1}>
+                  {showPass ? '🙈' : '👁️'}
+                </button>
+              </div>
+              {mode === 'register' && <div className="hint">Senha de acesso do GrupoWhat (não é a senha do Gmail).</div>}
+              <div className="err">{err}</div>
+              <button type="submit" className="btn" disabled={busy}>
+                {busy ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
+              </button>
+            </form>
+            <button type="button" className="btn ghost" style={{ marginTop: 12 }}
+              onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr(''); }}>
+              {mode === 'login' ? 'Criar conta com email' : 'Já tenho conta — entrar'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

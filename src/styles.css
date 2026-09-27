@@ -94,30 +94,74 @@ input, textarea { font-family: inherit; }
 
 /* Auth */
 .auth {
-  position: relative; overflow: hidden;
+  position: relative; overflow: hidden auto;
   display: flex; align-items: center; justify-content: center;
-  min-height: 100%; padding: 16px; background: var(--chat-bg);
+  min-height: 100%; background: var(--bg);
 }
-.auth-bg {
-  position: absolute; inset: 0; pointer-events: none;
-  background:
-    radial-gradient(700px 460px at 85% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%),
-    radial-gradient(560px 460px at -10% 110%, color-mix(in srgb, var(--accent2) 15%, transparent), transparent 60%);
-}
-.auth-card {
-  position: relative; width: 100%; max-width: 400px; background: var(--panel);
-  border-radius: 26px; padding: 40px 34px;
+.auth-shell {
+  width: 100%; max-width: 1000px; min-height: min(680px, 92vh); margin: 16px;
+  display: grid; grid-template-columns: 1.05fr 1fr;
+  border-radius: 28px; overflow: hidden;
   box-shadow: var(--shadow-elev), 0 0 0 1px var(--border);
-  animation: modalIn .3s cubic-bezier(.2,.9,.25,1.1);
+  background: var(--panel);
 }
-.auth-logo {
-  width: 68px; height: 68px; margin: 0 auto 14px; border-radius: 22px;
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #000));
-  display: flex; align-items: center; justify-content: center; font-size: 34px;
-  box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 45%, transparent);
+
+/* vitrine (lado esquerdo, só em telas largas) */
+.auth-showcase {
+  position: relative; overflow: hidden; padding: 44px 40px;
+  display: flex; align-items: center;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 22%, var(--bg)), var(--bg) 65%);
 }
-.auth-card h1 { font-size: 25px; font-weight: 800; text-align: center; margin-bottom: 4px; letter-spacing: -.3px; }
+.auth-orb { position: absolute; border-radius: 50%; filter: blur(50px); opacity: .55; animation: orbFloat 12s ease-in-out infinite; }
+.auth-orb.o1 { width: 260px; height: 260px; background: var(--accent); top: -60px; left: -60px; animation-delay: 0s; }
+.auth-orb.o2 { width: 220px; height: 220px; background: var(--accent2); bottom: -40px; right: -40px; animation-delay: -4s; }
+.auth-orb.o3 { width: 160px; height: 160px; background: #ffffff22; top: 45%; left: 60%; animation-delay: -8s; }
+@keyframes orbFloat { 0%, 100% { transform: translate(0,0) scale(1); } 50% { transform: translate(20px,-24px) scale(1.08); } }
+.auth-showcase-inner { position: relative; z-index: 2; max-width: 380px; }
+.auth-brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 16px; margin-bottom: 30px; letter-spacing: -.2px; }
+.auth-brand-icon { font-size: 20px; }
+.auth-showcase-inner h2 { font-size: 34px; font-weight: 800; line-height: 1.15; letter-spacing: -.8px; margin-bottom: 14px; }
+.auth-showcase-inner p { color: var(--muted); font-size: 14.5px; line-height: 1.55; margin-bottom: 26px; }
+.auth-feats { display: flex; flex-direction: column; gap: 12px; margin-bottom: 40px; }
+.auth-feat { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
+.auth-feat span { width: 34px; height: 34px; border-radius: 10px; background: var(--panel2); display: flex;
+  align-items: center; justify-content: center; font-size: 16px; box-shadow: var(--shadow-soft); flex-shrink: 0; }
+.auth-float-bubbles { position: relative; height: 90px; }
+.fb { position: absolute; background: var(--bubble-in); padding: 8px 13px; border-radius: 14px; font-size: 12.5px;
+  box-shadow: var(--shadow-soft); animation: fbFloat 5s ease-in-out infinite; border-top-left-radius: 4px; }
+.fb.mine { background: var(--bubble-out); border-top-left-radius: 14px; border-top-right-radius: 4px; }
+.fb1 { top: 0; left: 0; animation-delay: 0s; }
+.fb2 { top: 34px; left: 90px; animation-delay: -1.6s; }
+.fb3 { top: 66px; left: 10px; animation-delay: -3.2s; }
+@keyframes fbFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+
+.auth-panel { display: flex; align-items: center; justify-content: center; padding: 40px 30px; background: var(--panel); }
+.auth-card { position: relative; width: 100%; max-width: 360px; animation: modalIn .3s cubic-bezier(.2,.9,.25,1.1); }
+.auth-logo-mobile { display: none; }
+.auth-card h1 { font-size: 25px; font-weight: 800; text-align: center; margin-bottom: 4px; letter-spacing: -.4px; }
 .auth-card .sub { color: var(--muted); text-align: center; font-size: 13px; margin-bottom: 26px; }
+
+.field { position: relative; margin-bottom: 10px; }
+.field .input { margin-bottom: 0; }
+.input.has-icon { padding-left: 40px; }
+.input.has-icon-r { padding-right: 42px; }
+.field-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font-size: 15px; opacity: .8; pointer-events: none; }
+.field-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none;
+  font-size: 15px; padding: 6px; border-radius: 8px; opacity: .75; transition: opacity .15s, background .15s; }
+.field-toggle:hover { opacity: 1; background: var(--panel2); }
+.field:has(.hint) { margin-bottom: 2px; }
+
+@media (max-width: 860px) {
+  .auth-shell { grid-template-columns: 1fr; max-width: 440px; }
+  .auth-showcase { display: none; }
+  .auth-panel { padding: 34px 26px; }
+  .auth-logo-mobile {
+    display: flex; width: 60px; height: 60px; margin: 0 auto 14px; border-radius: 20px;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #000));
+    align-items: center; justify-content: center; font-size: 30px;
+    box-shadow: 0 8px 26px color-mix(in srgb, var(--accent) 42%, transparent);
+  }
+}
 .input { width: 100%; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);
   background: var(--input); color: var(--text); font-size: 15px; margin-bottom: 10px; transition: border-color .15s, box-shadow .15s; resize: vertical; }
 .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
