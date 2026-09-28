@@ -683,7 +683,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
           {admin && <>
                       <span className="crown" title="Admin">👑</span>
-                      <div className="notif-wrap" onClick={onNotifs}>...
+                      <div className="notif-wrap" onClick={onNotifs}>
               <span className={`notif-bell ${notifs.length ? 'has' : ''}`}>🔔</span>
               {notifs.length > 0 && <span className="notif-badge">{notifs.length}</span>}
             </div>
@@ -704,6 +704,14 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
           )}
         </div>
       </header>
+      <div className="side-hello">
+        <div className="side-hello-title">Olá, {((profile || user.user_metadata?.display_name || 'você') + '').split(' ')[0]} 👋</div>
+        <div className="side-hello-sub">
+          {filtered.length
+            ? `${filtered.length} conversa${filtered.length > 1 ? 's' : ''} · toque numa pra abrir`
+            : 'Crie um grupo ou entre com um número pra começar'}
+        </div>
+      </div>
       <div className="side-actions">
         <button className="btn" onClick={onJoin}>🔢 Entrar com nº</button>
         <button className="btn ghost" onClick={onNew}>➕ Novo grupo</button>

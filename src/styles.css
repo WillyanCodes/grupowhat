@@ -560,3 +560,111 @@ input, textarea { font-family: inherit; }
 
 /* transições suaves ao trocar de tema/modo */
 body, .panel, .modal, .msg, .btn, .input { transition: background-color .25s ease, color .2s ease, border-color .2s ease; }
+/* =====================================================================
+   V2 — NOVO CONCEITO: tela cheia + fundo aurora + painéis de vidro flutuantes
+   (fica no fim do arquivo de propósito: sobrescreve o layout antigo)
+   ===================================================================== */
+@supports (height: 100dvh) { html, body, #root { height: 100dvh; } }
+
+/* fundo aurora animado (atrás de tudo) */
+body { background: var(--bg); }
+body::before {
+  content: ''; position: fixed; inset: -25%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(45% 40% at 12% 8%,  color-mix(in srgb, var(--accent) 38%, transparent), transparent 70%),
+    radial-gradient(40% 40% at 92% 14%, rgba(124, 92, 224, .26), transparent 70%),
+    radial-gradient(50% 45% at 70% 105%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%),
+    radial-gradient(35% 35% at 5% 95%, rgba(0, 160, 255, .16), transparent 70%);
+  animation: auroraDrift 24s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift {
+  from { transform: translate3d(-3%, -2%, 0) rotate(0deg) scale(1); }
+  to   { transform: translate3d(3%, 3%, 0) rotate(7deg) scale(1.1); }
+}
+.auth { background: transparent; }
+
+/* tela cheia (acabou a faixa branca nas laterais) */
+.app { max-width: none; padding: 16px; }
+.layout { flex: 1; min-height: 0; height: auto; gap: 16px; }
+
+/* painéis de vidro */
+.sidebar, .chat-main {
+  position: relative; isolation: isolate; overflow: hidden; background: transparent;
+  border: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
+  border-radius: 28px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+.sidebar::before, .chat-main::before {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background: color-mix(in srgb, var(--panel) 74%, transparent);
+  -webkit-backdrop-filter: blur(26px) saturate(1.5); backdrop-filter: blur(26px) saturate(1.5);
+}
+.chat-main::before { background: color-mix(in srgb, var(--panel) 62%, transparent); }
+.sidebar { width: 410px; max-width: 410px; flex-shrink: 0; border-right: 1px solid color-mix(in srgb, var(--text) 9%, transparent); z-index: 30; }
+
+/* sidebar */
+.sidebar header { background: transparent; border-bottom: none; backdrop-filter: none; padding: 20px 20px 6px; position: relative; z-index: 50; }
+.side-hello { padding: 4px 22px 12px; }
+.side-hello-title { font-size: 24px; font-weight: 800; letter-spacing: -.6px; }
+.side-hello-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.side-actions { border-bottom: none; padding: 4px 18px 12px; gap: 10px; }
+.side-actions .btn { flex: 1; border-radius: 16px; padding: 13px 10px; font-size: 13.5px; }
+.side-actions .btn.ghost { background: color-mix(in srgb, var(--panel2) 65%, transparent); border-color: transparent; color: var(--text); }
+.side-actions .btn.ghost:hover { background: color-mix(in srgb, var(--accent) 14%, var(--panel2)); }
+.search-bar { border-bottom: none; padding: 2px 18px 12px; }
+.search-bar input { border-radius: 16px; padding: 12px 16px; background: color-mix(in srgb, var(--panel2) 70%, transparent); }
+
+/* grupos como cartões */
+.groups { padding: 2px 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.group-item { border-bottom: none; border: 1px solid transparent; border-radius: 20px; padding: 11px 13px;
+  animation: itemIn .4s cubic-bezier(.2,.8,.3,1) both; transition: background .18s, transform .18s, border-color .18s; }
+.group-item:nth-child(2) { animation-delay: .04s; } .group-item:nth-child(3) { animation-delay: .08s; }
+.group-item:nth-child(4) { animation-delay: .12s; } .group-item:nth-child(5) { animation-delay: .16s; }
+.group-item:nth-child(n+6) { animation-delay: .2s; }
+@keyframes itemIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.group-item:hover { background: color-mix(in srgb, var(--panel2) 75%, transparent); transform: translateX(3px); }
+.group-item.active { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, transparent), color-mix(in srgb, var(--accent) 8%, transparent));
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent); transform: none; }
+.group-item.active::before { display: none; }
+
+/* chat */
+.chat-header { background: transparent; backdrop-filter: none; padding: 16px 22px; position: relative; z-index: 20;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 7%, transparent); }
+.messages { background: transparent; padding: 22px 26px; }
+.msg-row { max-width: min(78%, 720px); }
+.day-divider { background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid color-mix(in srgb, var(--text) 8%, transparent); }
+
+/* balões: enviados = cor do tema com texto branco; recebidos = vidro */
+.msg { border-radius: 20px; padding: 9px 13px; }
+.msg.in { background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid color-mix(in srgb, var(--text) 7%, transparent); border-top-left-radius: 6px; }
+.msg.out { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 82%, #000), color-mix(in srgb, var(--accent) 56%, #000));
+  color: #fff; border: none; border-top-right-radius: 6px; box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 30%, transparent); }
+.msg.out .time { color: rgba(255,255,255,.78); }
+.msg.out a { color: #fff !important; text-decoration: underline; }
+.msg.out .msg-menu-btn, .msg.out .msg-react-btn { color: rgba(255,255,255,.85); }
+.msg.out .react-pill { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.28); color: #fff; }
+.msg.out .react-pill span { color: rgba(255,255,255,.85); }
+
+/* barra de digitar flutuante */
+.typing-bar { background: transparent; border-top: none; padding: 4px 24px; }
+.inputbar { background: transparent; border-top: none; padding: 8px 20px 20px; gap: 10px; align-items: center; }
+.inputbar textarea { background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  border-radius: 26px; padding: 14px 20px; box-shadow: 0 10px 30px rgba(0,0,0,.10); }
+.atc { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0;
+  background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid color-mix(in srgb, var(--text) 9%, transparent); }
+.snd { width: 50px; height: 50px; }
+
+/* celular: tela cheia de verdade, sem cartões */
+@media (max-width: 820px) {
+  .app { padding: 0; }
+  .layout { gap: 0; }
+  .sidebar, .chat-main { border-radius: 0; border: none; box-shadow: none; width: 100%; max-width: 100%; }
+  .sidebar::before, .chat-main::before { background: color-mix(in srgb, var(--panel) 88%, transparent); }
+  .sidebar header { padding: max(16px, env(safe-area-inset-top)) 16px 4px; }
+  .side-hello { padding: 4px 18px 10px; }
+  .chat-header { padding: max(10px, env(safe-area-inset-top)) 12px 10px; }
+  .messages { padding: 14px 10px; }
+  .msg-row { max-width: min(88%, 720px); }
+  .inputbar { padding: 8px 10px calc(12px + env(safe-area-inset-bottom)); }
+  .typing-bar { padding: 4px 14px; }
+}
