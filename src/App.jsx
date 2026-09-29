@@ -336,6 +336,7 @@ function Md({ text = '' }) {
 /* ============ FIM MARKDOWN ============ */
 
 const BOT_ID = '00000000-0000-0000-0000-000000000000'; // id fixo do bot 🤖 GPT
+const BOT_AVATAR = 'data:image/jpeg;base64,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';
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 /* ============ AUTH ============ */
 function AuthScreen() {
@@ -472,6 +473,21 @@ function Main({ user, profile, setProfile }) {
   const [mobileView, setMobileView] = useState('list');
   const [notifs, setNotifs] = useState([]);
   const [showNotifs, setShowNotifs] = useState(false);
+
+  // botão de voltar do celular/navegador: fecha a conversa em vez de sair do site (igual WhatsApp)
+  const openChat = (g) => {
+    window.history.pushState({ gwChat: true }, '');
+    setActive(g); setMobileView('chat'); markSeen(g.id, g.last_message_at);
+  };
+  const closeChat = () => {
+    if (window.history.state && window.history.state.gwChat) window.history.back();
+    else { setActive(null); setMobileView('list'); }
+  };
+  useEffect(() => {
+    const onPop = () => { setActive(null); setMobileView('list'); };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const [lastSeen, setLastSeen] = useState(() => {
     try { return JSON.parse(localStorage.getItem('gw_lastseen') || '{}'); } catch (_) { return {}; }
   });
@@ -580,7 +596,7 @@ function Main({ user, profile, setProfile }) {
       <div className={`layout ${mobileView === 'chat' ? 'mobile-chat' : 'mobile-list'}`}>
         <Sidebar
           groups={groups} active={active} lastSeen={lastSeen}
-          setActive={(g) => { setActive(g); setMobileView('chat'); markSeen(g.id, g.last_message_at); }}
+          setActive={(g) => openChat(g)}
           admin={admin} user={user} profile={profile}
           notifs={notifs} onNotifs={() => setShowNotifs(true)}
           onNew={() => setShowCreate(true)}
@@ -591,7 +607,7 @@ function Main({ user, profile, setProfile }) {
           <Bubbles count={22} />
           {active
             ? <ChatView key={active.id} group={active} user={user} profile={profile}
-                onBack={() => { setActive(null); setMobileView('list'); }}
+                onBack={closeChat}
                 onInfo={() => setShowInfo(true)}
                 onLeft={async () => { await leaveOrDelete(active.id); }} />
             : <EmptyChat onNew={() => setShowCreate(true)} onJoin={() => setShowJoin(true)} />}
@@ -606,7 +622,7 @@ function Main({ user, profile, setProfile }) {
         <NotifsModal notifs={notifs} setNotifs={setNotifs} groups={groups} onClose={() => setShowNotifs(false)}
           onOpenGroup={(gid) => {
             const g = groups.find((x) => x.id === gid);
-            if (g) { setActive(g); setMobileView('chat'); }
+            if (g) openChat(g);
             setShowNotifs(false);
           }} onChanged={loadNotifs} />
       )}
@@ -1336,7 +1352,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
           const next = visible[i + 1];
           const isLastInRun = !next || next.user_id !== m.user_id || next.system_type;
           const isIncoming = m.user_id !== user.id;
-          const senderProf = memberProfiles[m.user_id];
+          const senderProf = m.user_id === BOT_ID ? { display_name: '🤖 GPT', avatar_url: BOT_AVATAR } : memberProfiles[m.user_id];
           return (
             <React.Fragment key={m.id}>
               {showDay && <div className="day-divider">{fmtDay(m.created_at)}</div>}
