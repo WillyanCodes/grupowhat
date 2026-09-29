@@ -679,3 +679,23 @@ body::before {
   100% { transform: translate(var(--dx), var(--dy)) rotate(var(--spin)) scale(0.8); }
 }
 @media (prefers-reduced-motion: reduce) { .bubble { animation: none; opacity: .08 !important; } }
+
+/* visualizador de foto em tela cheia (clique em qualquer avatar) */
+.avatar-clickable { cursor: pointer; transition: filter .15s, transform .15s; }
+.avatar-clickable:hover { filter: brightness(1.08); transform: scale(1.03); }
+.photo-viewer {
+  position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.88);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  animation: fadeIn .18s ease; cursor: zoom-out; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.photo-viewer img {
+  max-width: min(92vw, 520px); max-height: 78vh; border-radius: 16px; cursor: default;
+  box-shadow: 0 24px 70px rgba(0,0,0,.6); animation: modalIn .22s cubic-bezier(.2,.9,.25,1.15);
+}
+.photo-viewer-name { color: #fff; margin-top: 16px; font-weight: 700; font-size: 15px; }
+.photo-viewer-close {
+  position: absolute; top: max(18px, env(safe-area-inset-top)); right: 18px; width: 42px; height: 42px;
+  border-radius: 50%; border: none; background: rgba(255,255,255,.12); color: #fff; font-size: 18px;
+  display: flex; align-items: center; justify-content: center; transition: background .15s;
+}
+.photo-viewer-close:hover { background: rgba(255,255,255,.22); }

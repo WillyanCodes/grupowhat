@@ -119,10 +119,12 @@ function SystemCard({ m, isOwner, onDecide, onJoinCall, callCount }) {
   return null;
 }
 
+let _openPhoto = null; // registrado pelo App raiz — assim qualquer Avatar em qualquer lugar consegue abrir o visualizador
 function Avatar({ name, url, size = 40, round = true }) {
   const hue = hashHue(name || '?');
   if (url) {
-    return <img src={url} alt="" className="avatar-img"
+    return <img src={url} alt="" className="avatar-img avatar-clickable"
+      onClick={(e) => { e.stopPropagation(); _openPhoto && _openPhoto(url, name); }}
       style={{ width: size, height: size, borderRadius: round ? '50%' : 14 }} />;
   }
   return (
@@ -131,6 +133,26 @@ function Avatar({ name, url, size = 40, round = true }) {
       background: `linear-gradient(135deg, hsl(${hue},72%,47%), hsl(${(hue + 45) % 360},72%,36%))`,
     }}>
       {(name || '?')[0].toUpperCase()}
+    </div>
+  );
+}
+
+// visualizador de foto em tela cheia (estilo WhatsApp) — montado uma vez só, no App raiz
+function PhotoViewer() {
+  const [photo, setPhoto] = useState(null); // { url, name }
+  useEffect(() => { _openPhoto = (url, name) => setPhoto({ url, name }); return () => { _openPhoto = null; }; }, []);
+  useEffect(() => {
+    if (!photo) return;
+    const onKey = (e) => { if (e.key === 'Escape') setPhoto(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [photo]);
+  if (!photo) return null;
+  return (
+    <div className="photo-viewer" onClick={() => setPhoto(null)}>
+      <button className="photo-viewer-close" onClick={() => setPhoto(null)}>✕</button>
+      <img src={photo.url} alt={photo.name || ''} onClick={(e) => e.stopPropagation()} />
+      {photo.name && <div className="photo-viewer-name">{photo.name}</div>}
     </div>
   );
 }
@@ -269,6 +291,7 @@ export default function App() {
 
   return <>
     <ErrorBoundary>{body}</ErrorBoundary>
+    <PhotoViewer />
   </>;
 }
 
