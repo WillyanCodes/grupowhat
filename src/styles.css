@@ -560,47 +560,46 @@ input, textarea { font-family: inherit; }
 
 /* transições suaves ao trocar de tema/modo */
 body, .panel, .modal, .msg, .btn, .input { transition: background-color .25s ease, color .2s ease, border-color .2s ease; }
+
 /* =====================================================================
    V2 — NOVO CONCEITO: tela cheia + fundo aurora + painéis de vidro flutuantes
-   (fica no fim do arquivo de propósito: sobrescreve o layout antigo)
+   (sem color-mix()/:has() — só CSS clássico, funciona em qualquer navegador)
    ===================================================================== */
-@supports (height: 100dvh) { html, body, #root { height: 100dvh; } }
+html, body, #root { height: 100%; }
 
-/* fundo aurora animado (atrás de tudo) */
-body { background: var(--bg); }
+/* fundo aurora animado (atrás de tudo) — cada tema tem sua própria cor de aurora */
+body { background: var(--bg); position: relative; }
 body::before {
-  content: ''; position: fixed; inset: -25%; z-index: -1; pointer-events: none;
+  content: ''; position: fixed; inset: -25%; z-index: 0; pointer-events: none; opacity: .55;
   background:
-    radial-gradient(45% 40% at 12% 8%,  color-mix(in srgb, var(--accent) 38%, transparent), transparent 70%),
-    radial-gradient(40% 40% at 92% 14%, rgba(124, 92, 224, .26), transparent 70%),
-    radial-gradient(50% 45% at 70% 105%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%),
-    radial-gradient(35% 35% at 5% 95%, rgba(0, 160, 255, .16), transparent 70%);
+    radial-gradient(45% 40% at 12% 8%,  var(--accent), transparent 70%),
+    radial-gradient(40% 40% at 92% 14%, #7c5ce0, transparent 70%),
+    radial-gradient(50% 45% at 70% 105%, var(--accent), transparent 70%),
+    radial-gradient(35% 35% at 5% 95%, #2aa8ff, transparent 70%);
   animation: auroraDrift 24s ease-in-out infinite alternate;
 }
+.light body::before { opacity: .28; }
 @keyframes auroraDrift {
   from { transform: translate3d(-3%, -2%, 0) rotate(0deg) scale(1); }
   to   { transform: translate3d(3%, 3%, 0) rotate(7deg) scale(1.1); }
 }
+#root { position: relative; z-index: 1; height: 100%; }
 .auth { background: transparent; }
 
 /* tela cheia (acabou a faixa branca nas laterais) */
-.app { max-width: none; padding: 16px; }
+.app { max-width: none; padding: 16px; background: transparent; }
 .layout { flex: 1; min-height: 0; height: auto; gap: 16px; }
 
 /* painéis de vidro */
 .sidebar, .chat-main {
-  position: relative; isolation: isolate; overflow: hidden; background: transparent;
-  border: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
+  position: relative; overflow: hidden; background: var(--panel);
+  border: 1px solid rgba(127,127,127,.16);
   border-radius: 28px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .22);
+  box-shadow: 0 24px 70px rgba(0,0,0,.22);
+  opacity: .97;
 }
-.sidebar::before, .chat-main::before {
-  content: ''; position: absolute; inset: 0; z-index: -1;
-  background: color-mix(in srgb, var(--panel) 74%, transparent);
-  -webkit-backdrop-filter: blur(26px) saturate(1.5); backdrop-filter: blur(26px) saturate(1.5);
-}
-.chat-main::before { background: color-mix(in srgb, var(--panel) 62%, transparent); }
-.sidebar { width: 410px; max-width: 410px; flex-shrink: 0; border-right: 1px solid color-mix(in srgb, var(--text) 9%, transparent); z-index: 30; }
+.light .sidebar, .light .chat-main { box-shadow: 0 24px 60px rgba(0,0,0,.10); border-color: rgba(0,0,0,.08); }
+.sidebar { width: 410px; max-width: 410px; flex-shrink: 0; border-right: 1px solid rgba(127,127,127,.16); z-index: 30; }
 
 /* sidebar */
 .sidebar header { background: transparent; border-bottom: none; backdrop-filter: none; padding: 20px 20px 6px; position: relative; z-index: 50; }
@@ -609,10 +608,10 @@ body::before {
 .side-hello-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .side-actions { border-bottom: none; padding: 4px 18px 12px; gap: 10px; }
 .side-actions .btn { flex: 1; border-radius: 16px; padding: 13px 10px; font-size: 13.5px; }
-.side-actions .btn.ghost { background: color-mix(in srgb, var(--panel2) 65%, transparent); border-color: transparent; color: var(--text); }
-.side-actions .btn.ghost:hover { background: color-mix(in srgb, var(--accent) 14%, var(--panel2)); }
+.side-actions .btn.ghost { background: var(--panel2); border-color: transparent; color: var(--text); }
+.side-actions .btn.ghost:hover { filter: brightness(1.08); }
 .search-bar { border-bottom: none; padding: 2px 18px 12px; }
-.search-bar input { border-radius: 16px; padding: 12px 16px; background: color-mix(in srgb, var(--panel2) 70%, transparent); }
+.search-bar input { border-radius: 16px; padding: 12px 16px; background: var(--panel2); }
 
 /* grupos como cartões */
 .groups { padding: 2px 12px 14px; display: flex; flex-direction: column; gap: 6px; }
@@ -622,45 +621,43 @@ body::before {
 .group-item:nth-child(4) { animation-delay: .12s; } .group-item:nth-child(5) { animation-delay: .16s; }
 .group-item:nth-child(n+6) { animation-delay: .2s; }
 @keyframes itemIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-.group-item:hover { background: color-mix(in srgb, var(--panel2) 75%, transparent); transform: translateX(3px); }
-.group-item.active { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, transparent), color-mix(in srgb, var(--accent) 8%, transparent));
-  border-color: color-mix(in srgb, var(--accent) 38%, transparent); transform: none; }
+.group-item:hover { background: var(--panel2); transform: translateX(3px); }
+.group-item.active { background: var(--panel2); border-color: var(--accent); transform: none; }
 .group-item.active::before { display: none; }
 
 /* chat */
 .chat-header { background: transparent; backdrop-filter: none; padding: 16px 22px; position: relative; z-index: 20;
-  border-bottom: 1px solid color-mix(in srgb, var(--text) 7%, transparent); }
+  border-bottom: 1px solid rgba(127,127,127,.14); }
 .messages { background: transparent; padding: 22px 26px; }
 .msg-row { max-width: min(78%, 720px); }
-.day-divider { background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid color-mix(in srgb, var(--text) 8%, transparent); }
+.day-divider { background: var(--panel2); border: 1px solid rgba(127,127,127,.14); }
 
-/* balões: enviados = cor do tema com texto branco; recebidos = vidro */
+/* balões: enviados = cor do tema com texto branco; recebidos = tom neutro */
 .msg { border-radius: 20px; padding: 9px 13px; }
-.msg.in { background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid color-mix(in srgb, var(--text) 7%, transparent); border-top-left-radius: 6px; }
-.msg.out { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 82%, #000), color-mix(in srgb, var(--accent) 56%, #000));
-  color: #fff; border: none; border-top-right-radius: 6px; box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 30%, transparent); }
-.msg.out .time { color: rgba(255,255,255,.78); }
+.msg.in { background: var(--bubble-in); border: 1px solid rgba(127,127,127,.12); border-top-left-radius: 6px; }
+.msg.out { background: var(--accent); color: #fff; border: none; border-top-right-radius: 6px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.18); }
+.msg.out .time { color: rgba(255,255,255,.8); }
 .msg.out a { color: #fff !important; text-decoration: underline; }
 .msg.out .msg-menu-btn, .msg.out .msg-react-btn { color: rgba(255,255,255,.85); }
-.msg.out .react-pill { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.28); color: #fff; }
+.msg.out .react-pill { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.3); color: #fff; }
 .msg.out .react-pill span { color: rgba(255,255,255,.85); }
 
 /* barra de digitar flutuante */
 .typing-bar { background: transparent; border-top: none; padding: 4px 24px; }
 .inputbar { background: transparent; border-top: none; padding: 8px 20px 20px; gap: 10px; align-items: center; }
-.inputbar textarea { background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
-  border-radius: 26px; padding: 14px 20px; box-shadow: 0 10px 30px rgba(0,0,0,.10); }
+.inputbar textarea { background: var(--panel2); border: 1px solid rgba(127,127,127,.14);
+  border-radius: 26px; padding: 14px 20px; box-shadow: 0 10px 24px rgba(0,0,0,.08); }
 .atc { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0;
-  background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid color-mix(in srgb, var(--text) 9%, transparent); }
+  background: var(--panel2); border: 1px solid rgba(127,127,127,.14); }
 .snd { width: 50px; height: 50px; }
 
-/* celular: tela cheia de verdade, sem cartões */
+/* celular: tela cheia de verdade, mas mantém um pouquinho de identidade (cantos leves) */
 @media (max-width: 820px) {
-  .app { padding: 0; }
-  .layout { gap: 0; }
-  .sidebar, .chat-main { border-radius: 0; border: none; box-shadow: none; width: 100%; max-width: 100%; }
-  .sidebar::before, .chat-main::before { background: color-mix(in srgb, var(--panel) 88%, transparent); }
-  .sidebar header { padding: max(16px, env(safe-area-inset-top)) 16px 4px; }
+  .app { padding: 6px; }
+  .layout { gap: 6px; }
+  .sidebar, .chat-main { border-radius: 18px; width: 100%; max-width: 100%; }
+  .sidebar header { padding: max(14px, env(safe-area-inset-top)) 16px 4px; }
   .side-hello { padding: 4px 18px 10px; }
   .chat-header { padding: max(10px, env(safe-area-inset-top)) 12px 10px; }
   .messages { padding: 14px 10px; }
