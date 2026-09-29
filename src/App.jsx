@@ -1,4 +1,4 @@
-import React, { Component, useEffect, useRef, useState } from 'react';
+import React, { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase, isAdmin } from './supabase.js';
 
 const THEMES = [
@@ -588,6 +588,7 @@ function Main({ user, profile, setProfile }) {
           onSettings={() => setShowSettings(true)}
         />
         <div className="chat-main">
+          <Bubbles count={10} />
           {active
             ? <ChatView key={active.id} group={active} user={user} profile={profile}
                 onBack={() => { setActive(null); setMobileView('list'); }}
@@ -671,6 +672,30 @@ function NameOnboarding({ user, onDone }) {
 }
 
 /* ============ SIDEBAR ============ */
+// bolhas flutuando devagar no fundo — cada instância sorteia o próprio padrão uma vez só
+function Bubbles({ count = 14 }) {
+  const bubbles = useMemo(() => Array.from({ length: count }, (_, i) => ({
+    id: i,
+    left: Math.round(Math.random() * 100),
+    size: Math.round(14 + Math.random() * 46),
+    dur: Math.round(14 + Math.random() * 18),
+    delay: -Math.round(Math.random() * 22),
+    drift: Math.round((Math.random() - 0.5) * 60),
+    op: (0.08 + Math.random() * 0.16).toFixed(2),
+  })), [count]);
+  return (
+    <div className="bubbles-layer" aria-hidden="true">
+      {bubbles.map((b) => (
+        <span key={b.id} className="bubble" style={{
+          left: `${b.left}%`, width: b.size, height: b.size,
+          animationDuration: `${b.dur}s`, animationDelay: `${b.delay}s`,
+          opacity: b.op, '--drift': `${b.drift}px`,
+        }} />
+      ))}
+    </div>
+  );
+}
+
 function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNotifs, onNew, onJoin, onSettings, lastSeen }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -678,6 +703,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
     g.member_status === 'approved' && (g.name || '').toLowerCase().includes(search.toLowerCase()));
   return (
     <div className="sidebar">
+      <Bubbles count={12} />
       <header>
         <div className="logo"><span className="logo-badge">💬</span> GrupoWhat</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>

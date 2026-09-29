@@ -665,3 +665,17 @@ body::before {
   .inputbar { padding: 8px 10px calc(12px + env(safe-area-inset-bottom)); }
   .typing-bar { padding: 4px 14px; }
 }
+
+/* bolhas flutuantes de fundo */
+.bubbles-layer { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.bubble {
+  position: absolute; bottom: -80px; border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.9), var(--accent) 70%);
+  animation-name: bubbleUp; animation-timing-function: linear; animation-iteration-count: infinite;
+}
+.light .bubble { background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.95), var(--accent) 75%); }
+@keyframes bubbleUp {
+  0%   { transform: translate(0, 0) scale(0.85); }
+  50%  { transform: translate(var(--drift), -55vh) scale(1.05); }
+  100% { transform: translate(calc(var(--drift) * 2), -115vh) scale(0.9); }
+}
