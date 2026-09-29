@@ -588,7 +588,7 @@ function Main({ user, profile, setProfile }) {
           onSettings={() => setShowSettings(true)}
         />
         <div className="chat-main">
-          <Bubbles count={10} />
+          <Bubbles count={22} />
           {active
             ? <ChatView key={active.id} group={active} user={user} profile={profile}
                 onBack={() => { setActive(null); setMobileView('list'); }}
@@ -672,24 +672,35 @@ function NameOnboarding({ user, onDone }) {
 }
 
 /* ============ SIDEBAR ============ */
-// bolhas flutuando devagar no fundo — cada instância sorteia o próprio padrão uma vez só
-function Bubbles({ count = 14 }) {
-  const bubbles = useMemo(() => Array.from({ length: count }, (_, i) => ({
-    id: i,
-    left: Math.round(Math.random() * 100),
-    size: Math.round(14 + Math.random() * 46),
-    dur: Math.round(14 + Math.random() * 18),
-    delay: -Math.round(Math.random() * 22),
-    drift: Math.round((Math.random() - 0.5) * 60),
-    op: (0.08 + Math.random() * 0.16).toFixed(2),
-  })), [count]);
+const BUBBLE_COLORS = ['var(--accent)', '#ff6b9d', '#5b8def', '#ffd166', '#9b6bff', '#2ec4b6', '#ff8a5b'];
+
+// bolhas coloridas vindo de qualquer direção (topo/baixo/esquerda/direita) — cada instância sorteia o próprio padrão uma vez só
+function Bubbles({ count = 24 }) {
+  const bubbles = useMemo(() => Array.from({ length: count }, (_, i) => {
+    const edge = ['top', 'bottom', 'left', 'right'][Math.floor(Math.random() * 4)];
+    let x0, y0, dx, dy;
+    if (edge === 'top') { x0 = Math.random() * 100; y0 = -12; dx = (Math.random() - 0.5) * 90; dy = 130 + Math.random() * 40; }
+    else if (edge === 'bottom') { x0 = Math.random() * 100; y0 = 112; dx = (Math.random() - 0.5) * 90; dy = -(130 + Math.random() * 40); }
+    else if (edge === 'left') { x0 = -12; y0 = Math.random() * 100; dx = 130 + Math.random() * 40; dy = (Math.random() - 0.5) * 70; }
+    else { x0 = 112; y0 = Math.random() * 100; dx = -(130 + Math.random() * 40); dy = (Math.random() - 0.5) * 70; }
+    return {
+      id: i, x0, y0, dx, dy,
+      size: Math.round(10 + Math.random() * 48),
+      dur: Math.round(10 + Math.random() * 16),
+      delay: -Math.round(Math.random() * 24),
+      op: (0.14 + Math.random() * 0.26).toFixed(2),
+      color: BUBBLE_COLORS[Math.floor(Math.random() * BUBBLE_COLORS.length)],
+      spin: Math.round((Math.random() - 0.5) * 300),
+    };
+  }), [count]);
   return (
     <div className="bubbles-layer" aria-hidden="true">
       {bubbles.map((b) => (
         <span key={b.id} className="bubble" style={{
-          left: `${b.left}%`, width: b.size, height: b.size,
+          left: `${b.x0}%`, top: `${b.y0}%`, width: b.size, height: b.size,
           animationDuration: `${b.dur}s`, animationDelay: `${b.delay}s`,
-          opacity: b.op, '--drift': `${b.drift}px`,
+          opacity: b.op, background: b.color, color: b.color,
+          '--dx': `${b.dx}vw`, '--dy': `${b.dy}vh`, '--spin': `${b.spin}deg`,
         }} />
       ))}
     </div>
@@ -703,7 +714,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
     g.member_status === 'approved' && (g.name || '').toLowerCase().includes(search.toLowerCase()));
   return (
     <div className="sidebar">
-      <Bubbles count={12} />
+      <Bubbles count={26} />
       <header>
         <div className="logo"><span className="logo-badge">💬</span> GrupoWhat</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>

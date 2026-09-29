@@ -666,16 +666,16 @@ body::before {
   .typing-bar { padding: 4px 14px; }
 }
 
-/* bolhas flutuantes de fundo */
+/* bolhas coloridas de fundo — vêm de qualquer direção (topo/baixo/esquerda/direita) */
 .bubbles-layer { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
 .bubble {
-  position: absolute; bottom: -80px; border-radius: 50%;
-  background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.9), var(--accent) 70%);
-  animation-name: bubbleUp; animation-timing-function: linear; animation-iteration-count: infinite;
+  position: absolute; border-radius: 50%; filter: blur(0.3px);
+  box-shadow: 0 0 18px 2px currentColor;
+  animation-name: bubbleFly; animation-timing-function: linear; animation-iteration-count: infinite;
 }
-.light .bubble { background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.95), var(--accent) 75%); }
-@keyframes bubbleUp {
-  0%   { transform: translate(0, 0) scale(0.85); }
-  50%  { transform: translate(var(--drift), -55vh) scale(1.05); }
-  100% { transform: translate(calc(var(--drift) * 2), -115vh) scale(0.9); }
+@keyframes bubbleFly {
+  0%   { transform: translate(0, 0) rotate(0deg) scale(0.75); }
+  50%  { transform: translate(calc(var(--dx) * .5), calc(var(--dy) * .5)) rotate(calc(var(--spin) * .5)) scale(1.08); }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--spin)) scale(0.8); }
 }
+@media (prefers-reduced-motion: reduce) { .bubble { animation: none; opacity: .08 !important; } }
