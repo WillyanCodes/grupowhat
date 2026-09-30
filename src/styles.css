@@ -834,3 +834,9 @@ button:focus-visible, .input:focus-visible, textarea:focus-visible, .group-item:
 /* feedback de toque nos itens clicáveis */
 .group-item:active { transform: scale(.985); }
 .react-pill:active, .perm-btn:active, .theme-swatch:active { transform: scale(.95); }
+
+/* botão "Pular por enquanto" */
+.skip-link { display: block; width: 100%; margin-top: 14px; padding: 10px; background: transparent; border: none;
+  color: var(--muted); font-size: 13.5px; font-weight: 600; border-radius: 10px; transition: color .15s, background .15s; }
+.skip-link:hover { color: var(--text); background: var(--panel2); }
+.skip-link:disabled { opacity: .5; cursor: default; }

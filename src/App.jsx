@@ -287,7 +287,7 @@ export default function App() {
   let body;
   if (loading) body = <div className="boot"><span className="boot-mark">💬</span><span className="spin" /></div>;
   else if (!session) body = <AuthScreen />;
-  else body = <Main key={session.user.id} user={session.user} profile={profile} setProfile={setProfile} />;
+  else body = <Main key={session.user.id} user={session.user} setProfile={setProfile} />;
 
   return <>
     <ErrorBoundary>{body}</ErrorBoundary>
@@ -485,8 +485,13 @@ const GLogo = () => (
 );
 
 /* ============ MAIN ============ */
-function Main({ user, profile, setProfile }) {
+function Main({ user, setProfile: setProfileGlobal }) {
   const admin = isAdmin(user.email);
+  // o nome vem da CONTA logada (não do localStorage do navegador, que podia guardar o nome de outra conta)
+  const metaName = user.user_metadata?.display_name || null;
+  const [localName, setLocalName] = useState(null);
+  const profile = metaName || localName;
+  const setProfile = (n) => { setLocalName(n || null); setProfileGlobal(n); };
   const [groups, setGroups] = useState([]);
   const [active, setActive] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -523,8 +528,6 @@ function Main({ user, profile, setProfile }) {
   };
 
   useEffect(() => {
-    const dn = user.user_metadata?.display_name;
-    if (dn && !profile) setProfile(dn);
     loadGroups();
     // atualiza a lista (última msg / ordem) quando chega mensagem nova em QUALQUER grupo — pra não precisar dar F5
     const ch = supabase.channel('all-messages-preview')
@@ -674,36 +677,72 @@ function EmptyChat({ onNew, onJoin }) {
   );
 }
 
-/* ============ ONBOARDING DE NOME ============ */
+/* ============ ONBOARDING (nome + foto, com opção de pular) ============ */
 function NameOnboarding({ user, onDone }) {
+  const meta = user.user_metadata || {};
+  // nome da própria conta (Google) — usado se a pessoa pular
+  const accountName = ((meta.full_name || meta.name || (user.email || '').split('@')[0] || 'Usuário') + '').trim();
   const [name, setName] = useState('');
+  const [avatar, setAvatar] = useState(meta.avatar_url || '');
+  const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const save = async (e) => {
-    e.preventDefault();
-    const n = name.trim();
-    if (n.length < 2) { setErr('Digite um nome com pelo menos 2 letras.'); return; }
+  const fileRef = useRef(null);
+
+  const pickPhoto = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setUploading(true); setErr('');
+    try {
+      const path = `avatars/user_${user.id}_${Date.now()}.${f.name.split('.').pop() || 'jpg'}`;
+      const { error } = await supabase.storage.from('media').upload(path, f);
+      if (error) { setErr('Não deu pra enviar a foto. Tente outra imagem.'); return; }
+      setAvatar(supabase.storage.from('media').getPublicUrl(path).data.publicUrl);
+    } finally { setUploading(false); }
+  };
+
+  const finish = async (finalName) => {
     setBusy(true); setErr('');
     try {
-      const { error } = await supabase.auth.updateUser({ data: { display_name: n } });
+      const data = { display_name: finalName };
+      if (avatar) data.avatar_url = avatar;
+      const { error } = await supabase.auth.updateUser({ data });
       if (error) throw error;
-      onDone(n);
+      onDone(finalName);
     } catch (x) { setErr(cleanErr(x.message)); }
     setBusy(false);
   };
+  const save = (e) => {
+    e.preventDefault();
+    const n = name.trim();
+    if (n.length < 2) { setErr('Digite um nome com pelo menos 2 letras.'); return; }
+    finish(n);
+  };
+
   return (
     <div className="auth">
       <div className="auth-card auth-card-solo">
-        <div className="auth-logo">💬</div>
         <h1>Bem-vindo ao GrupoWhat!</h1>
-        <div className="sub">Escolha seu nome ou apelido — é assim que os outros vão te ver nos grupos.</div>
+        <div className="sub">Escolha como os outros vão te ver nos grupos.</div>
+        <input ref={fileRef} type="file" hidden accept="image/*" onChange={pickPhoto} />
+        <div className="settings-avatar-row">
+          <div className="settings-avatar-pick" onClick={() => !uploading && fileRef.current?.click()}>
+            <Avatar name={name || accountName} url={avatar} size={72} viewable={false} />
+            <div className="settings-avatar-edit">{uploading ? '…' : '📷'}</div>
+          </div>
+          <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Toque na foto pra escolher uma (opcional)</div>
+        </div>
         <form onSubmit={save}>
-          <input className="input" placeholder="Seu nome ou nick" value={name}
-            onChange={(e) => setName(e.target.value)} maxLength={30} autoFocus required />
-          <div className="hint">Você pode mudar isso depois em 🎨 Aparência → Seu nome.</div>
+          <input className="input" placeholder="Seu nome ou apelido" value={name}
+            onChange={(e) => setName(e.target.value)} maxLength={30} autoFocus />
+          <div className="hint">Você pode mudar isso depois em Aparência → Seu nome.</div>
           <div className="err">{err}</div>
-          <button type="submit" className="btn" disabled={busy}>{busy ? 'Salvando…' : 'Começar'}</button>
+          <button type="submit" className="btn" disabled={busy || uploading}>{busy ? 'Salvando…' : 'Começar'}</button>
         </form>
+        <button type="button" className="skip-link" disabled={busy || uploading} onClick={() => finish(accountName)}>
+          Pular por enquanto (usar “{accountName}”)
+        </button>
       </div>
     </div>
   );
