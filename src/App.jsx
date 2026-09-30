@@ -120,11 +120,11 @@ function SystemCard({ m, isOwner, onDecide, onJoinCall, callCount }) {
 }
 
 let _openPhoto = null; // registrado pelo App raiz — assim qualquer Avatar em qualquer lugar consegue abrir o visualizador
-function Avatar({ name, url, size = 40, round = true }) {
+function Avatar({ name, url, size = 40, round = true, viewable = true }) {
   const hue = hashHue(name || '?');
   if (url) {
-    return <img src={url} alt="" className="avatar-img avatar-clickable"
-      onClick={(e) => { e.stopPropagation(); _openPhoto && _openPhoto(url, name); }}
+    return <img src={url} alt="" className={`avatar-img${viewable ? ' avatar-clickable' : ''}`}
+      onClick={viewable ? (e) => { e.stopPropagation(); _openPhoto && _openPhoto(url, name); } : undefined}
       style={{ width: size, height: size, borderRadius: round ? '50%' : 14 }} />;
   }
   return (
@@ -160,9 +160,9 @@ function PhotoViewer() {
 function toast(msg, isErr = false) {
   const el = document.createElement('div');
   el.textContent = msg;
-  el.style.cssText = `position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:${isErr ? '#ef4444' : '#1f2c34'};color:#fff;padding:12px 22px;border-radius:14px;z-index:500;font-size:14px;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,.45);transition:opacity .3s;max-width:90vw;text-align:center`;
+  el.className = 'gw-toast' + (isErr ? ' err' : '');
   document.body.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 320); }, 2600);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, 2600);
 }
 
 class ErrorBoundary extends Component {
@@ -285,7 +285,7 @@ export default function App() {
   }, []);
 
   let body;
-  if (loading) body = <div className="boot"><span className="spin" />Carregando…</div>;
+  if (loading) body = <div className="boot"><span className="boot-mark">💬</span><span className="spin" /></div>;
   else if (!session) body = <AuthScreen />;
   else body = <Main key={session.user.id} user={session.user} profile={profile} setProfile={setProfile} />;
 
@@ -764,7 +764,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
             </div>
           </>}
           <div className="avatar-wrap" onClick={() => setMenuOpen((v) => !v)}>
-            <Avatar name={profile || user.email} url={user.user_metadata?.avatar_url} size={36} />
+            <Avatar name={profile || user.email} url={user.user_metadata?.avatar_url} size={36} viewable={false} />
           </div>
           {menuOpen && (
             <>
@@ -813,7 +813,7 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
           return (
             <div key={g.id} className={`group-item ${active?.id === g.id ? 'active' : ''} ${isUnread ? 'unread' : ''}`}
               onClick={() => setActive(g)}>
-              <Avatar name={g.name} url={g.avatar_url} />
+              <Avatar name={g.name} url={g.avatar_url} viewable={false} />
               <div className="col">
                 <div className="gp-name">{g.name}</div>
                 <div className="gp-meta">{preview}</div>
@@ -1963,7 +1963,7 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
     <div className="modal-back" onClick={onClose}>
       <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="gi-head">
-          <Avatar name={name} url={avatarUrl} size={64} />
+          <Avatar name={name} url={avatarUrl} size={64} viewable={false} />
           {isOwner && (
             <div className="gi-edit-avatar">
               <input ref={fileRef} type="file" hidden accept="image/*" onChange={uploadAvatar} />
@@ -2193,7 +2193,7 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
         <div className="settings-avatar-row">
           <input ref={avatarFileRef} type="file" hidden accept="image/*" onChange={uploadMyAvatar} />
           <div className="settings-avatar-pick" onClick={() => !uploadingAvatar && avatarFileRef.current?.click()}>
-            <Avatar name={name || profile || user.email} url={myAvatar} size={72} />
+            <Avatar name={name || profile || user.email} url={myAvatar} size={72} viewable={false} />
             <div className="settings-avatar-edit">{uploadingAvatar ? '…' : '📷'}</div>
           </div>
           <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Toque na foto pra trocar</div>

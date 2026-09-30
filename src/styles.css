@@ -785,3 +785,52 @@ button:focus-visible, .input:focus-visible, textarea:focus-visible, .group-item:
   .side-hello-title { font-size: 23px; }
   .msg-row:has(.msg.first) { margin-top: 6px; }
 }
+
+/* ---------- V3.1 ---------- */
+
+/* aviso (toast) com entrada e saída suaves */
+.gw-toast {
+  position: fixed; left: 50%; bottom: calc(26px + env(safe-area-inset-bottom, 0px)); z-index: 500;
+  transform: translateX(-50%); max-width: min(90vw, 420px); text-align: center;
+  background: var(--panel2); color: var(--text); border: 1px solid rgba(127,127,127,.22);
+  border-left: 4px solid var(--accent); padding: 12px 20px; border-radius: 16px;
+  font-size: 14px; font-weight: 600; box-shadow: var(--shadow-elev);
+  animation: toastIn .28s cubic-bezier(.2,.9,.3,1.2);
+  transition: opacity .3s, transform .3s;
+}
+.gw-toast.err { border-left-color: var(--danger); }
+.gw-toast.out { opacity: 0; transform: translateX(-50%) translateY(8px); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(14px) scale(.96); } to { opacity: 1; transform: translateX(-50%); } }
+
+/* carregamento: logo pulsando */
+.boot { flex-direction: column; gap: 18px; }
+.boot-mark {
+  width: 64px; height: 64px; border-radius: 22px; font-size: 0; color: transparent; position: relative;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #000));
+  box-shadow: 0 10px 34px color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: bootPulse 1.6s ease-in-out infinite;
+}
+.boot-mark::after { content: ''; position: absolute; inset: 0; margin: auto; width: 54%; height: 54%; background: #fff;
+  -webkit-mask: var(--gw-mark) center / contain no-repeat; mask: var(--gw-mark) center / contain no-repeat; }
+@keyframes bootPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+
+/* fundo do chat com textura leve (rabiscos de balão), pra não ficar "liso" */
+.messages {
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160' fill='none' stroke='%23808080' stroke-opacity='.10' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M20 26h26a4 4 0 0 1 4 4v14a4 4 0 0 1-4 4H34l-8 6v-6h-6a4 4 0 0 1-4-4V30a4 4 0 0 1 4-4z'/><circle cx='112' cy='34' r='9'/><path d='M108 34h8M112 30v8'/><path d='M96 116l6 6 12-14'/><path d='M30 112c6-8 14-8 20 0s14 8 20 0'/><path d='M124 92l4 8 8 1-6 6 2 8-8-4-8 4 2-8-6-6 8-1z'/></svg>");
+  background-size: 160px 160px;
+}
+
+/* entrada da tela principal: uma única animação orquestrada */
+.layout .sidebar { animation: sideIn .5s cubic-bezier(.2,.8,.3,1) both; }
+.layout .chat-main { animation: mainIn .6s .08s cubic-bezier(.2,.8,.3,1) both; }
+@keyframes sideIn { from { opacity: 0; transform: translateX(-18px); } to { opacity: .97; transform: none; } }
+@keyframes mainIn { from { opacity: 0; transform: translateY(14px); } to { opacity: .97; transform: none; } }
+
+/* mensagens novas: o balão "brota" do lado de quem enviou */
+.msg-row.out .msg { transform-origin: bottom right; }
+.msg-row.in .msg { transform-origin: bottom left; }
+
+/* feedback de toque nos itens clicáveis */
+.group-item:active { transform: scale(.985); }
+.react-pill:active, .perm-btn:active, .theme-swatch:active { transform: scale(.95); }
