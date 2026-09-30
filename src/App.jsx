@@ -693,8 +693,7 @@ function NameOnboarding({ user, onDone }) {
   };
   return (
     <div className="auth">
-      <div className="auth-bg" />
-      <div className="auth-card">
+      <div className="auth-card auth-card-solo">
         <div className="auth-logo">💬</div>
         <h1>Bem-vindo ao GrupoWhat!</h1>
         <div className="sub">Escolha seu nome ou apelido — é assim que os outros vão te ver nos grupos.</div>
@@ -1374,6 +1373,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
           }
           const next = visible[i + 1];
           const isLastInRun = !next || next.user_id !== m.user_id || next.system_type;
+          const isFirstInRun = !prev || prev.user_id !== m.user_id || prev.system_type || showDay;
           const isIncoming = m.user_id !== user.id;
           const senderProf = m.user_id === BOT_ID ? { display_name: '🤖 GPT', avatar_url: BOT_AVATAR } : memberProfiles[m.user_id];
           return (
@@ -1388,9 +1388,9 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                     )}
                   </div>
                 )}
-                <div className={`msg ${isIncoming ? 'in' : 'out'}`}
+                <div className={`msg ${isIncoming ? 'in' : 'out'}${isFirstInRun ? ' first' : ''}${isLastInRun ? ' last' : ''}`}
                   onContextMenu={(e) => { e.preventDefault(); setMenuMsg(m.id); }}>
-                {m.user_id !== user.id && <div className="author">{m.author_name || 'Alguém'}</div>}
+                {isIncoming && isFirstInRun && <div className="author">{m.author_name || 'Alguém'}</div>}
                 {m.one_view && m.user_id === user.id && (
                   <div className="one-badge">🕐 Visualização única{viewed.has(m.id) ? ' · vista' : ''}</div>
                 )}
