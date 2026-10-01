@@ -595,6 +595,32 @@ function Main({ user, setProfile: setProfileGlobal }) {
     return () => { cancelled = true; };
   }, [groups, lastSeen, active?.id]);
 
+  // notificações: se já estão liberadas, mantém a inscrição deste aparelho atualizada
+  useEffect(() => {
+    if (pushSupported() && Notification.permission === 'granted') ensurePushSubscription().catch(() => {});
+  }, [user.id]);
+
+  // tocar numa notificação abre o grupo certo
+  const groupsRef = useRef([]);
+  groupsRef.current = groups;
+  const pendingOpen = useRef(null);
+  const tryOpenPending = () => {
+    const gid = pendingOpen.current;
+    if (!gid) return;
+    const g = groupsRef.current.find((x) => x.id === gid);
+    if (g) { pendingOpen.current = null; openChat(g); }
+  };
+  useEffect(() => {
+    try {
+      const g = new URLSearchParams(window.location.search).get('g');
+      if (g) { pendingOpen.current = g; window.history.replaceState(null, '', '/'); }
+    } catch (_) {}
+    const onMsg = (e) => { if (e.data && e.data.type === 'open-group' && e.data.gid) { pendingOpen.current = e.data.gid; tryOpenPending(); } };
+    if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', onMsg);
+    return () => { if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('message', onMsg); };
+  }, []);
+  useEffect(() => { tryOpenPending(); }, [groups]);
+
   // título da aba do navegador mostra o total de não lidas, tipo "(3) GrupoWhat"
   useEffect(() => {
     const total = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
@@ -911,6 +937,86 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ============ NOTIFICAÇÕES (push) ============ */
+const pushSupported = () => typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const b64ToU8 = (b64) => {
+  const raw = atob((b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+};
+async function ensurePushSubscription() {
+  const r = await fetch('/api/push');
+  const { key } = await r.json();
+  if (!key) throw new Error('push-nao-configurado');
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    try { sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) }); }
+    catch (_) { // inscrição antiga com outra chave: recomeça do zero
+      const old = await reg.pushManager.getSubscription();
+      if (old) await old.unsubscribe();
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) });
+    }
+  }
+  const j = sub.toJSON();
+  const { error } = await supabase.rpc('save_push_subscription', { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
+  if (error) throw error;
+  return sub;
+}
+
+function PushToggle() {
+  const supported = pushSupported();
+  const [perm, setPerm] = useState(supported ? Notification.permission : 'unsupported');
+  const [on, setOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!supported) return;
+    navigator.serviceWorker.getRegistration('/').then(async (reg) => {
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      setOn(!!sub && Notification.permission === 'granted');
+    }).catch(() => {});
+  }, []);
+  const enable = async () => {
+    setBusy(true);
+    try {
+      const p = await Notification.requestPermission();
+      setPerm(p);
+      if (p !== 'granted') { toast('Notificações bloqueadas. Libere nas configurações do navegador/app.', true); return; }
+      await ensurePushSubscription();
+      setOn(true);
+      toast('🔔 Notificações ativadas neste aparelho');
+    } catch (err) {
+      console.error(err);
+      toast(err.message === 'push-nao-configurado' ? 'Notificações ainda não configuradas no servidor' : 'Não deu pra ativar as notificações', true);
+    } finally { setBusy(false); }
+  };
+  const disable = async () => {
+    setBusy(true);
+    try {
+      const reg = await navigator.serviceWorker.getRegistration('/');
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      if (sub) { await supabase.rpc('remove_push_subscription', { p_endpoint: sub.endpoint }); await sub.unsubscribe(); }
+      setOn(false);
+      toast('🔕 Notificações desativadas neste aparelho');
+    } catch (err) { console.error(err); } finally { setBusy(false); }
+  };
+  if (!supported) {
+    return <div className="muted" style={{ marginTop: 6, fontSize: 12.5 }}>Este navegador não suporta notificações. No iPhone, instale o app na tela inicial primeiro.</div>;
+  }
+  return (
+    <div style={{ marginTop: 6 }}>
+      {perm === 'denied' ? (
+        <div className="muted" style={{ fontSize: 12.5 }}>Notificações bloqueadas. Libere nas configurações do navegador ou do app e tente de novo.</div>
+      ) : (
+        <button type="button" className={`btn ${on ? 'ghost' : ''}`} style={{ marginTop: 0 }} disabled={busy} onClick={on ? disable : enable}>
+          {busy ? '…' : on ? '🔕 Desativar notificações' : '🔔 Ativar notificações'}
+        </button>
+      )}
+      {on && <div className="muted" style={{ marginTop: 6, fontSize: 12.5 }}>Você recebe um aviso quando chegar mensagem e o app estiver fechado ou em segundo plano.</div>}
     </div>
   );
 }
@@ -2634,6 +2740,8 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
           <button className={`btn ${mode === 'dark' ? '' : 'ghost'}`} onClick={() => { setMode('dark'); apply(theme, 'dark'); }}>🌙 Escuro</button>
           <button className={`btn ${mode === 'light' ? '' : 'ghost'}`} onClick={() => { setMode('light'); apply(theme, 'light'); }}>☀️ Claro</button>
         </div>
+        <div className="muted" style={{ marginTop: 12 }}>🔔 Notificações</div>
+        <PushToggle />
         <div className="muted" style={{ marginTop: 12 }}>🖼️ Fundo da conversa</div>
         <div className="wall-grid">
           {WALLS.map((w) => (
