@@ -1886,13 +1886,16 @@ function CallOverlay({ kind, group, user, onEnd }) {
       { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
       { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
     ];
-    const pc = new RTCPeerConnection({ iceServers });
-    pcRef.current = pc;
     const wantVideo = kind === 'video';
-    // quem é o dono do grupo "vence" em caso de as duas pontas mandarem oferta ao mesmo tempo (perfect negotiation)
-    const polite = user.id !== group.owner_id;
+    const sid = Math.random().toString(36).slice(2) + Date.now().toString(36); // identifica ESTA entrada na chamada
+    let pc = null;
+    let peerSid = null;        // quem está do outro lado
     let makingOffer = false;
-    let ignoreOffer = false;
+    let pendingCands = [];     // candidatos ICE que chegaram antes da oferta (antes eram perdidos)
+    let closed = false;
+    let queue = Promise.resolve(); // processa os sinais UM de cada vez, na ordem
+    let mediaReadyResolve;
+    const mediaReady = new Promise((r) => { mediaReadyResolve = r; });
 
     // marca que a chamada está ativa no grupo (trigger gera o card no chat) — via RPC p/ qualquer membro
     supabase.rpc('set_call_state', { gid: group.id, p_active: true, p_kind: kind }).then(() => {}, () => {});
@@ -1902,73 +1905,142 @@ function CallOverlay({ kind, group, user, onEnd }) {
 
     const ch = supabase.channel(`call:${group.id}`);
     chRef.current = ch;
+    const send = (payload) => { try { ch.send({ type: 'broadcast', event: 'signal', payload: { ...payload, sid } }); } catch (_) {} };
 
-    // envia cada candidato ICE assim que descoberto (antes disso, o áudio/vídeo remoto nunca chegava)
-    pc.onicecandidate = ({ candidate }) => {
-      if (candidate) ch.send({ type: 'broadcast', event: 'signal', payload: { candidate } });
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'connected') setStatus('Conectado');
-      else if (pc.connectionState === 'connecting') setStatus('Conectando…');
-      else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') setStatus('Reconectando…');
-    };
-
-    pc.ontrack = (ev) => {
-      const el = document.getElementById('remote-media');
-      if (el) {
-        el.srcObject = ev.streams[0];
-        el.play().catch(() => {});
-        // trava o áudio remoto: botão pra pausar/retomar
-        el.muted = remoteMuted;
+    // coloca nossa câmera/micro na conexão (se não tiver, só recebe)
+    const attachLocal = (p, forAnswer) => {
+      const s = streamRef.current;
+      if (s) { s.getTracks().forEach((t) => p.addTrack(t, s)); return; }
+      if (!forAnswer) {
+        p.addTransceiver('audio', { direction: 'recvonly' });
+        if (wantVideo) p.addTransceiver('video', { direction: 'recvonly' });
       }
     };
 
-    // dispara automaticamente sempre que uma track é adicionada (ou renegociação é necessária)
-    pc.onnegotiationneeded = async () => {
+    // cria uma conexão NOVA e limpa (usada a cada vez que alguém entra, assim ninguém precisa sair e entrar de novo)
+    const buildPc = () => {
+      if (pc) { try { pc.onicecandidate = null; pc.ontrack = null; pc.onconnectionstatechange = null; pc.close(); } catch (_) {} }
+      pendingCands = [];
+      makingOffer = false;
+      const p = new RTCPeerConnection({ iceServers });
+      pc = p;
+      pcRef.current = p;
+      p.onicecandidate = ({ candidate }) => { if (candidate && p === pc) send({ candidate }); };
+      p.onconnectionstatechange = () => {
+        if (p !== pc) return;
+        if (p.connectionState === 'connected') setStatus('Conectado');
+        else if (p.connectionState === 'connecting') setStatus('Conectando…');
+        else if (p.connectionState === 'disconnected' || p.connectionState === 'failed') setStatus('Reconectando…');
+        if (p.connectionState === 'failed') send({ hello: true }); // pede pro outro lado refazer a conexão
+      };
+      p.ontrack = (ev) => {
+        const el = document.getElementById('remote-media');
+        if (!el) return;
+        const stream = ev.streams[0] || new MediaStream([ev.track]);
+        if (el.srcObject !== stream) el.srcObject = stream;
+        el.play().catch(() => {});
+      };
+      return p;
+    };
+
+    const makeOffer = async () => {
+      const p = pc;
       try {
         makingOffer = true;
-        await pc.setLocalDescription();
-        ch.send({ type: 'broadcast', event: 'signal', payload: { desc: pc.localDescription } });
+        await mediaReady; // espera câmera/micro ficarem prontos pra oferta já sair com áudio/vídeo
+        if (closed || p !== pc || p.signalingState !== 'stable') return;
+        attachLocal(p, false);
+        await p.setLocalDescription(await p.createOffer());
+        send({ desc: p.localDescription });
       } catch (err) { console.error(err); }
       finally { makingOffer = false; }
     };
 
-    ch.on('broadcast', { event: 'signal' }, async ({ payload }) => {
-      try {
-        // um peer novo acabou de entrar na sala de sinalização: reenvia/renegocia pra ele não perder nada
-        if (payload.hello) {
-          if (pc.localDescription) pc.restartIce();
-          return;
-        }
-        if (payload.candidate) {
-          try { await pc.addIceCandidate(payload.candidate); }
-          catch (err) { if (!ignoreOffer) throw err; }
-          return;
-        }
-        const desc = payload.desc;
-        if (!desc) return;
-        const offerCollision = desc.type === 'offer' && (makingOffer || pc.signalingState !== 'stable');
-        ignoreOffer = !polite && offerCollision;
-        if (ignoreOffer) return;
-        await pc.setRemoteDescription(desc);
-        if (desc.type === 'offer') {
-          await pc.setLocalDescription();
-          ch.send({ type: 'broadcast', event: 'signal', payload: { desc: pc.localDescription } });
-        }
-      } catch (err) { console.error(err); }
-    }).subscribe((status) => {
-      // avisa quem já estava na chamada que alguém novo chegou (pra ele renegociar e reenviar tudo)
-      if (status === 'SUBSCRIBED') ch.send({ type: 'broadcast', event: 'signal', payload: { hello: true } });
-    });
+    const flushCands = async () => {
+      const list = pendingCands; pendingCands = [];
+      for (const c of list) { try { await pc.addIceCandidate(c); } catch (_) {} }
+    };
 
-    navigator.mediaDevices.getUserMedia({ video: wantVideo, audio: true })
-      .then((s) => {
+    const handle = async (payload) => {
+      if (closed || !payload || payload.sid === sid) return;
+
+      if (payload.bye) { // o outro saiu: limpa tudo e fica esperando o próximo
+        if (payload.sid === peerSid) { peerSid = null; buildPc(); setStatus('Conectando…'); }
+        return;
+      }
+
+      if (payload.hello) { // alguém acabou de entrar: quem já estava aqui faz a oferta
+        const same = payload.sid === peerSid;
+        const state = pc.connectionState;
+        if (peerSid && !same && state === 'connected') return; // já estou em chamada com outra pessoa
+        if (!same || state === 'failed') {
+          peerSid = payload.sid;
+          buildPc();
+          setStatus('Conectando…');
+          await makeOffer();
+        } else if (pc.signalingState === 'have-local-offer' && pc.localDescription) {
+          send({ desc: pc.localDescription }); // reenvia a oferta (a primeira pode ter se perdido)
+        }
+        return;
+      }
+
+      if (peerSid && payload.sid !== peerSid) return; // sinal velho de outra entrada
+      if (!peerSid) peerSid = payload.sid;
+
+      if (payload.candidate) {
+        if (pc.remoteDescription) { try { await pc.addIceCandidate(payload.candidate); } catch (_) {} }
+        else pendingCands.push(payload.candidate);
+        return;
+      }
+
+      const desc = payload.desc;
+      if (!desc) return;
+      if (desc.type === 'answer') {
+        if (pc.signalingState !== 'have-local-offer') return;
+        await pc.setRemoteDescription(desc);
+        await flushCands();
+        return;
+      }
+      // oferta: se as duas pontas ofereceram ao mesmo tempo, quem tem o menor id cede
+      const polite = sid < peerSid;
+      const collision = makingOffer || pc.signalingState !== 'stable';
+      if (collision && !polite) return;
+      await pc.setRemoteDescription(desc);
+      await flushCands();
+      await mediaReady;
+      attachLocal(pc, true);
+      await pc.setLocalDescription(await pc.createAnswer());
+      send({ desc: pc.localDescription });
+    };
+
+    buildPc();
+    ch.on('broadcast', { event: 'signal' }, ({ payload }) => {
+      queue = queue.then(() => handle(payload)).catch((err) => console.error(err));
+    }).subscribe((st) => {
+      if (st === 'SUBSCRIBED') send({ hello: true }); // avisa quem já está na chamada que cheguei
+    });
+    // se ninguém respondeu (mensagem perdida), repete o aviso algumas vezes
+    let helloTries = 0;
+    const helloIv = setInterval(() => {
+      if (peerSid || closed || ++helloTries > 6) { if (peerSid || closed || helloTries > 6) clearInterval(helloIv); return; }
+      send({ hello: true });
+    }, 3000);
+
+    // câmera/micro: se a câmera for negada, tenta só o áudio (em vez de ficar em silêncio)
+    (async () => {
+      let s = null;
+      try { s = await navigator.mediaDevices.getUserMedia({ video: wantVideo, audio: true }); }
+      catch (_) {
+        if (wantVideo) { try { s = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (_) {} }
+      }
+      if (closed) { s?.getTracks().forEach((t) => t.stop()); mediaReadyResolve(); return; }
+      if (s) {
         streamRef.current = s;
-        s.getTracks().forEach((t) => pc.addTrack(t, s)); // dispara onnegotiationneeded
         const el = document.getElementById('local-media');
-        if (wantVideo && el) { el.srcObject = s; el.play().catch(() => {}); }
-      }).catch(() => setStatus('Sem câmera/micro — chamada em silêncio'));
+        if (wantVideo && el && s.getVideoTracks().length) { el.srcObject = s; el.play().catch(() => {}); }
+      } else setStatus('Sem câmera/micro — chamada em silêncio');
+      mediaReadyResolve();
+    })();
 
     // lista de quem está na chamada via tabela (realtime + polling 4s)
     const loadPeers = async () => {
@@ -1996,8 +2068,13 @@ function CallOverlay({ kind, group, user, onEnd }) {
 
     return () => {
       clearInterval(iv);
+      clearInterval(helloIv);
       clearTimeout(stuckTimer);
-      pc.close(); ch.unsubscribe(); ch2.unsubscribe(); ch3.unsubscribe();
+      send({ bye: true }); // avisa o outro lado que saí, pra ele já ficar pronto pra minha próxima entrada
+      closed = true;
+      try { pc && pc.close(); } catch (_) {}
+      setTimeout(() => { try { ch.unsubscribe(); } catch (_) {} }, 500);
+      ch2.unsubscribe(); ch3.unsubscribe();
       // só remove ESTE usuário da chamada — o banco decide sozinho se foi o último e encerra pra todo mundo
       supabase.rpc('leave_call', { gid: group.id }).then(() => {}, () => {});
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
