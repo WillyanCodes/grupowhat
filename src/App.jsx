@@ -915,6 +915,30 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
   );
 }
 
+/* ============ CITAÇÃO DE RESPOSTA (aparece dentro do balão) ============ */
+const previewOf = (m) => (!m.kind || m.kind === 'text') ? (m.content || '')
+  : m.kind === 'image' ? '📷 Foto' : m.kind === 'video' ? '🎥 Vídeo' : m.kind === 'audio' ? '🎤 Áudio' : '📎 Arquivo';
+function ReplyQuote({ id, messages, onJump }) {
+  const local = messages.find((x) => x.id === id);
+  const [remote, setRemote] = useState(null);
+  useEffect(() => {
+    if (local || remote !== null) return;
+    let alive = true;
+    supabase.from('messages').select('id, content, kind, author_name').eq('id', id).maybeSingle()
+      .then(({ data }) => { if (alive) setRemote(data || false); });
+    return () => { alive = false; };
+  }, [id, !!local]);
+  const q = local || remote;
+  if (q === null) return <div className="reply-quote"><span className="rq-text">…</span></div>;
+  if (q === false) return <div className="reply-quote gone"><span className="rq-text">Mensagem original apagada</span></div>;
+  return (
+    <div className="reply-quote" onClick={(e) => { e.stopPropagation(); onJump(id); }}>
+      <span className="rq-author">{q.author_name || 'Alguém'}</span>
+      <span className="rq-text">{previewOf(q)}</span>
+    </div>
+  );
+}
+
 /* ============ PRÉVIA DE LINK ============ */
 const _previewCache = new Map();
 function LinkPreview({ text }) {
@@ -1287,9 +1311,15 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     fetchReactions();
   };
 
+  const replyingRef = useRef(null);
+  replyingRef.current = replying;
   const insertMsg = async (payload) => {
-    const { error } = await supabase.from('messages').insert(payload);
+    const rid = replyingRef.current?.id;
+    let { error } = await supabase.from('messages').insert(rid ? { ...payload, reply_to: rid } : payload);
+    // se a coluna reply_to não existir no banco, envia sem ela em vez de falhar
+    if (error && rid && error.code === 'PGRST204') ({ error } = await supabase.from('messages').insert(payload));
     if (error) { console.error(error); toast('Erro ao enviar mensagem', true); return false; }
+    if (rid) setReplying(null);
     return true;
   };
 
@@ -1303,17 +1333,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
       group_id: group.id, user_id: user.id, content: body, kind: 'text',
       author_name: profile || user.email?.split('@')[0],
     };
-    // resposta: tenta salvar reply_to, mas se a coluna não existir, não quebra o envio
-    if (replying?.id) {
-      try {
-        const { error } = await supabase.from('messages').insert({ ...payload, reply_to: replying.id });
-        if (error && error.code !== 'PGRST204') throw error;
-        setReplying(null);
-        return;
-      } catch (_) {}
-    }
-    await insertMsg(payload);
-    setReplying(null);
+    await insertMsg(payload); // já anexa o reply_to quando você está respondendo alguém
   };
 
   const onPickFile = (e) => {
@@ -1646,6 +1666,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                 <div className={`msg ${isIncoming ? 'in' : 'out'}${isFirstInRun ? ' first' : ''}${isLastInRun ? ' last' : ''}`}
                   onContextMenu={(e) => { e.preventDefault(); setMenuMsg(m.id); }}>
                 {isIncoming && isFirstInRun && <div className="author">{m.author_name || 'Alguém'}</div>}
+                {m.reply_to && <ReplyQuote id={m.reply_to} messages={messages} onJump={jumpTo} />}
                 {m.one_view && m.user_id === user.id && (
                   <div className="one-badge">🕐 Visualização única{viewed.has(m.id) ? ' · vista' : ''}</div>
                 )}
