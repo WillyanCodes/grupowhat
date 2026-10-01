@@ -932,3 +932,13 @@ body[data-wall="glow"] .messages {
 .reply-quote .rq-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   font-size: 12.5px; opacity: .85; line-height: 1.3; word-break: break-word; }
 .reply-quote.gone { cursor: default; font-style: italic; opacity: .75; }
+
+/* botões da chamada: estado "desligado" fica vermelho e óbvio */
+.callbar .call-btn.off { background: var(--danger); border: none; color: #fff; box-shadow: 0 6px 20px color-mix(in srgb, var(--danger) 40%, transparent); }
+.callbar .call-btn.off::after { content: ''; position: absolute; width: 30px; height: 3px; border-radius: 2px; background: #fff; transform: rotate(-42deg); }
+.callbar .call-btn { position: relative; }
+.call-vid .cam-off { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; background: #0c1116; color: #9aa6b2; font-size: 38px; }
+.call-vid .cam-off span { font-size: 14px; font-weight: 600; }
+.call-vid .local-vid { z-index: 2; transition: opacity .2s; }
+.call-vid .local-vid.off { opacity: 0; pointer-events: none; }

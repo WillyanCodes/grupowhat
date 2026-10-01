@@ -1876,6 +1876,10 @@ function CallOverlay({ kind, group, user, onEnd }) {
   const [muted, setMuted] = useState(false);
   const [remoteMuted, setRemoteMuted] = useState(false);
   const [left, setLeft] = useState(false);
+  const [camOn, setCamOn] = useState(kind === 'video');         // minha câmera
+  const [remoteState, setRemoteState] = useState({ audio: true, video: true }); // mic/câmera do outro lado
+  const stateRef = useRef({ audio: true, video: kind === 'video' });
+  const sendRef = useRef(null);
 
   useEffect(() => {
     // STUN + TURN de fallback (openrelay/metered — gratuito, útil quando STUN sozinho não atravessa o NAT/firewall)
@@ -1906,14 +1910,21 @@ function CallOverlay({ kind, group, user, onEnd }) {
     const ch = supabase.channel(`call:${group.id}`);
     chRef.current = ch;
     const send = (payload) => { try { ch.send({ type: 'broadcast', event: 'signal', payload: { ...payload, sid } }); } catch (_) {} };
+    sendRef.current = send;
 
     // coloca nossa câmera/micro na conexão (se não tiver, só recebe)
     const attachLocal = (p, forAnswer) => {
       const s = streamRef.current;
-      if (s) { s.getTracks().forEach((t) => p.addTrack(t, s)); return; }
+      if (s) s.getTracks().forEach((t) => p.addTrack(t, s));
+      const hasAudio = !!(s && s.getAudioTracks().length);
+      const hasVideo = !!(s && s.getVideoTracks().length);
       if (!forAnswer) {
-        p.addTransceiver('audio', { direction: 'recvonly' });
-        if (wantVideo) p.addTransceiver('video', { direction: 'recvonly' });
+        if (!hasAudio) p.addTransceiver('audio', { direction: 'recvonly' });
+        if (wantVideo && !hasVideo) p.addTransceiver('video', { direction: 'sendrecv' }); // câmera pode ligar depois
+      } else if (wantVideo && !hasVideo) {
+        p.getTransceivers().forEach((t) => {
+          if (t.receiver.track && t.receiver.track.kind === 'video' && !t.sender.track && t.direction === 'recvonly') t.direction = 'sendrecv';
+        });
       }
     };
 
@@ -1928,16 +1939,17 @@ function CallOverlay({ kind, group, user, onEnd }) {
       p.onicecandidate = ({ candidate }) => { if (candidate && p === pc) send({ candidate }); };
       p.onconnectionstatechange = () => {
         if (p !== pc) return;
-        if (p.connectionState === 'connected') setStatus('Conectado');
+        if (p.connectionState === 'connected') { setStatus('Conectado'); send({ state: { ...stateRef.current } }); }
         else if (p.connectionState === 'connecting') setStatus('Conectando…');
         else if (p.connectionState === 'disconnected' || p.connectionState === 'failed') setStatus('Reconectando…');
         if (p.connectionState === 'failed') send({ hello: true }); // pede pro outro lado refazer a conexão
       };
+      const remoteStream = new MediaStream();
       p.ontrack = (ev) => {
+        if (!remoteStream.getTracks().includes(ev.track)) remoteStream.addTrack(ev.track);
         const el = document.getElementById('remote-media');
         if (!el) return;
-        const stream = ev.streams[0] || new MediaStream([ev.track]);
-        if (el.srcObject !== stream) el.srcObject = stream;
+        if (el.srcObject !== remoteStream) el.srcObject = remoteStream;
         el.play().catch(() => {});
       };
       return p;
@@ -1965,7 +1977,11 @@ function CallOverlay({ kind, group, user, onEnd }) {
       if (closed || !payload || payload.sid === sid) return;
 
       if (payload.bye) { // o outro saiu: limpa tudo e fica esperando o próximo
-        if (payload.sid === peerSid) { peerSid = null; buildPc(); setStatus('Conectando…'); }
+        if (payload.sid === peerSid) { peerSid = null; buildPc(); setStatus('Conectando…'); setRemoteState({ audio: true, video: true }); }
+        return;
+      }
+      if (payload.state) { // o outro lado mutou / desligou a câmera
+        if (!peerSid || payload.sid === peerSid) setRemoteState({ audio: payload.state.audio !== false, video: payload.state.video !== false });
         return;
       }
 
@@ -2038,7 +2054,10 @@ function CallOverlay({ kind, group, user, onEnd }) {
         streamRef.current = s;
         const el = document.getElementById('local-media');
         if (wantVideo && el && s.getVideoTracks().length) { el.srcObject = s; el.play().catch(() => {}); }
-      } else setStatus('Sem câmera/micro — chamada em silêncio');
+        const hasCam = s.getVideoTracks().length > 0;
+        setCamOn(wantVideo && hasCam);
+        stateRef.current.video = wantVideo && hasCam;
+      } else { setStatus('Sem câmera/micro — chamada em silêncio'); setCamOn(false); stateRef.current.video = false; }
       mediaReadyResolve();
     })();
 
@@ -2081,9 +2100,39 @@ function CallOverlay({ kind, group, user, onEnd }) {
     };
   }, []);
 
+  const announce = () => sendRef.current && sendRef.current({ state: { ...stateRef.current } });
   const toggleMute = () => {
     const nm = !muted; setMuted(nm);
+    // desliga o áudio tanto na captura quanto no que está sendo enviado
     streamRef.current?.getAudioTracks().forEach((tr) => { tr.enabled = !nm; });
+    pcRef.current?.getSenders().forEach((sd) => { if (sd.track && sd.track.kind === 'audio') sd.track.enabled = !nm; });
+    stateRef.current.audio = !nm;
+    announce();
+  };
+  const toggleCam = async () => {
+    const stream = streamRef.current;
+    const sender = () => pcRef.current?.getTransceivers().find((t) => t.receiver.track && t.receiver.track.kind === 'video')?.sender;
+    const localEl = document.getElementById('local-media');
+    if (camOn) {
+      // desliga de verdade (a luz da câmera apaga) e para de enviar vídeo
+      stream?.getVideoTracks().forEach((t) => { t.stop(); stream.removeTrack(t); });
+      try { await sender()?.replaceTrack(null); } catch (_) {}
+      setCamOn(false);
+      stateRef.current.video = false;
+    } else {
+      try {
+        const vs = await navigator.mediaDevices.getUserMedia({ video: true });
+        const nt = vs.getVideoTracks()[0];
+        let st = streamRef.current;
+        if (!st) { st = new MediaStream(); streamRef.current = st; }
+        st.addTrack(nt);
+        await sender()?.replaceTrack(nt);
+        if (localEl) { localEl.srcObject = st; localEl.play().catch(() => {}); }
+        setCamOn(true);
+        stateRef.current.video = true;
+      } catch (err) { console.error(err); toast('Não consegui ligar a câmera', true); return; }
+    }
+    announce();
   };
   const toggleRemote = () => {
     const nm = !remoteMuted; setRemoteMuted(nm);
@@ -2107,7 +2156,8 @@ function CallOverlay({ kind, group, user, onEnd }) {
       {kind === 'video' ? (
         <div className="call-vid">
           <video id="remote-media" autoPlay playsInline />
-          <video id="local-media" autoPlay playsInline muted className="local-vid" />
+          {!remoteState.video && <div className="cam-off">📷<span>Câmera desligada</span></div>}
+          <video id="local-media" autoPlay playsInline muted className={`local-vid${camOn ? '' : ' off'}`} />
         </div>
       ) : (
         // chamada de voz: sem tela, mas precisa de um elemento pra TOCAR o áudio remoto (senão a pessoa fica muda)
@@ -2122,14 +2172,20 @@ function CallOverlay({ kind, group, user, onEnd }) {
         {who.length === 0 ? <span className="muted">Só você por enquanto…</span> : who.map((w, i) => (
           <span key={i} className="call-peer">🟢 {w}</span>
         ))}
+        {!remoteState.audio && <span className="call-peer">🔇 Mutado</span>}
       </div>
 
       <div className="callbar">
-        <button className="call-btn" title={muted ? 'Desmutar' : 'Mutar'} onClick={toggleMute}>
+        <button className={`call-btn${muted ? ' off' : ''}`} title={muted ? 'Ativar microfone' : 'Mutar meu microfone'} onClick={toggleMute}>
           {muted ? '🔇' : '🎤'}
         </button>
-        <button className="call-btn" title={remoteMuted ? 'Ouvir de novo' : 'Pausar volume (não ouvir)'} onClick={toggleRemote}>
-          {remoteMuted ? '🔇' : '🔊'}
+        {kind === 'video' && (
+          <button className={`call-btn${camOn ? '' : ' off'}`} title={camOn ? 'Desligar câmera' : 'Ligar câmera'} onClick={toggleCam}>
+            {camOn ? '📹' : '📷'}
+          </button>
+        )}
+        <button className={`call-btn${remoteMuted ? ' off' : ''}`} title={remoteMuted ? 'Ouvir de novo' : 'Silenciar o som da chamada'} onClick={toggleRemote}>
+          {remoteMuted ? '🔈' : '🔊'}
         </button>
         <button className="call-btn red" title="Encerrar" onClick={end}>✕</button>
       </div>
