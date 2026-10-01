@@ -10,6 +10,15 @@ const THEMES = [
   { id: 'orange', label: 'Laranja', bg: '#fb923c' },
 ];
 
+const WALLS = [
+  { id: 'doodle', label: 'Rabiscos' },
+  { id: 'plain', label: 'Liso' },
+  { id: 'dots', label: 'Pontos' },
+  { id: 'grid', label: 'Grade' },
+  { id: 'waves', label: 'Ondas' },
+  { id: 'glow', label: 'Brilho' },
+];
+
 const fmtTime = (t) => {
   if (!t) return '';
   return new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -280,6 +289,7 @@ export default function App() {
       document.body.classList.remove('light', ...THEMES.map((t) => 'theme-' + t.id));
       if (md === 'light') document.body.classList.add('light');
       document.body.classList.add('theme-' + th);
+      document.body.dataset.wall = localStorage.getItem('gw_wall') || 'doodle';
     } catch (_) {}
     startGlobalEmojiScanner();
   }, []);
@@ -905,6 +915,63 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
   );
 }
 
+/* ============ PRÉVIA DE LINK ============ */
+const _previewCache = new Map();
+function LinkPreview({ text }) {
+  const url = useMemo(() => {
+    const m = (text || '').match(/https?:\/\/[^\s<>"']+/i);
+    return m ? m[0].replace(/[),.;!?]+$/, '') : null;
+  }, [text]);
+  const [data, setData] = useState(() => (url && _previewCache.get(url)) || null);
+  useEffect(() => {
+    if (!url) return;
+    if (_previewCache.has(url)) { setData(_previewCache.get(url) || null); return; }
+    let alive = true;
+    fetch(`/api/preview?url=${encodeURIComponent(url)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { _previewCache.set(url, d || false); if (alive) setData(d || null); })
+      .catch(() => { _previewCache.set(url, false); });
+    return () => { alive = false; };
+  }, [url]);
+  if (!url || !data || (!data.title && !data.image)) return null;
+  return (
+    <a className="link-card" href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+      {data.image && <img src={data.image} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+      <div className="link-card-text">
+        {data.site && <div className="link-card-site">{data.site}</div>}
+        {data.title && <div className="link-card-title">{data.title}</div>}
+        {data.description && <div className="link-card-desc">{data.description}</div>}
+      </div>
+    </a>
+  );
+}
+
+/* ============ GALERIA DE FOTOS DO GRUPO ============ */
+function GroupGallery({ groupId }) {
+  const [imgs, setImgs] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    supabase.from('messages').select('id, media_url').eq('group_id', groupId).eq('kind', 'image')
+      .or('one_view.is.null,one_view.eq.false').not('media_url', 'is', null)
+      .order('created_at', { ascending: false }).limit(60)
+      .then(({ data }) => { if (alive) setImgs(data || []); });
+    return () => { alive = false; };
+  }, [groupId]);
+  if (!imgs || imgs.length === 0) return null;
+  return (
+    <>
+      <div className="muted" style={{ marginTop: 14 }}>🖼️ Fotos do grupo ({imgs.length}{imgs.length === 60 ? '+' : ''})</div>
+      <div className="gallery-grid">
+        {imgs.map((i) => (
+          <button key={i.id} className="gallery-item" onClick={() => _openPhoto && _openPhoto(i.media_url, '')}>
+            <img src={i.media_url} alt="" loading="lazy" />
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
 /* ============ CHAT ============ */
 function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   const pending = group.member_status !== 'approved';
@@ -934,6 +1001,12 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     const [unseenCount, setUnseenCount] = useState(0); // bolinha estilo WhatsApp
     const [memberProfiles, setMemberProfiles] = useState({}); // { user_id: { display_name, avatar_url } } — pra mostrar foto na mensagem
     const [reactions, setReactions] = useState({}); // { message_id: { emoji: Set(user_id) } }
+    const [pinnedId, setPinnedId] = useState(null); // mensagem fixada no topo
+    const [pinnedFetched, setPinnedFetched] = useState(null);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [searchQ, setSearchQ] = useState('');
+    const [searchIdx, setSearchIdx] = useState(0);
+    const [flashId, setFlashId] = useState(null);
     const [reactPickerMsg, setReactPickerMsg] = useState(null); // id da msg com o seletor de emoji aberto
 
   // fecha o menu de contexto ao clicar fora ou apertar Esc
@@ -1370,10 +1443,14 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   const [swipe, setSwipe] = useState({ id: null, dx: 0 });
   const swipeStartX = useRef(0);
   const swipeActive = useRef(false);
-  const onSwipeStart = (e) => { swipeStartX.current = e.touches[0].clientX; swipeActive.current = true; };
+  const swipeStartY = useRef(0);
+  const onSwipeStart = (e) => { swipeStartX.current = e.touches[0].clientX; swipeStartY.current = e.touches[0].clientY; swipeActive.current = true; };
   const onSwipeMove = (m) => (e) => {
     if (!swipeActive.current) return;
-    const dx = Math.max(0, Math.min(70, e.touches[0].clientX - swipeStartX.current));
+    const rawDx = e.touches[0].clientX - swipeStartX.current;
+    const rawDy = e.touches[0].clientY - swipeStartY.current;
+    if (Math.abs(rawDy) > Math.abs(rawDx) && Math.abs(rawDy) > 10) { swipeActive.current = false; setSwipe({ id: null, dx: 0 }); return; }
+    const dx = Math.max(0, Math.min(70, rawDx));
     if (dx > 6) setSwipe({ id: m.id, dx });
   };
   const onSwipeEnd = (m) => () => {
@@ -1394,6 +1471,62 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
   };
 
   const visible = messages.filter((m) => !(m.one_view && m.user_id !== user.id && hidden.has(m.id)));
+
+  // ----- mensagem fixada (só o criador do grupo fixa; todo mundo vê) -----
+  useEffect(() => {
+    let alive = true;
+    setPinnedId(null); setPinnedFetched(null); setSearchOpen(false); setSearchQ('');
+    const loadPin = async () => {
+      const { data } = await supabase.from('group_pins').select('message_id').eq('group_id', group.id).maybeSingle();
+      if (alive) setPinnedId(data?.message_id || null);
+    };
+    loadPin();
+    const ch = supabase.channel(`pins:${group.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'group_pins', filter: `group_id=eq.${group.id}` }, () => loadPin())
+      .subscribe();
+    return () => { alive = false; supabase.removeChannel(ch); };
+  }, [group.id]);
+  useEffect(() => {
+    if (!pinnedId || messages.some((m) => m.id === pinnedId) || pinnedFetched?.id === pinnedId) return;
+    supabase.from('messages').select('id, content, kind, author_name').eq('id', pinnedId).maybeSingle()
+      .then(({ data }) => { if (data) setPinnedFetched(data); });
+  }, [pinnedId, messages.length]);
+  const pinnedMsg = pinnedId ? (messages.find((m) => m.id === pinnedId) || (pinnedFetched?.id === pinnedId ? pinnedFetched : null)) : null;
+  const pinPreview = (m) => (!m.kind || m.kind === 'text') ? (m.content || '')
+    : m.kind === 'image' ? '📷 Foto' : m.kind === 'video' ? '🎥 Vídeo' : m.kind === 'audio' ? '🎤 Áudio' : '📎 Arquivo';
+  const pinMsg = async (m) => {
+    setMenuMsg(null);
+    const { error } = await supabase.from('group_pins').upsert({ group_id: group.id, message_id: m.id }, { onConflict: 'group_id' });
+    if (error) { console.error(error); toast('Não deu pra fixar a mensagem', true); return; }
+    setPinnedId(m.id);
+    toast('📌 Mensagem fixada no topo');
+  };
+  const unpinMsg = async () => {
+    setMenuMsg(null);
+    await supabase.from('group_pins').delete().eq('group_id', group.id);
+    setPinnedId(null);
+  };
+  const jumpTo = (id) => {
+    const el = document.getElementById('msg-' + id);
+    if (!el) { toast('Essa mensagem é antiga e não está carregada', true); return; }
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setFlashId(id);
+    setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1800);
+  };
+
+  // ----- busca na conversa (nas mensagens já carregadas) -----
+  const q = searchQ.trim().toLowerCase();
+  const matches = q ? visible.filter((m) => !m.system_type && (m.content || '').toLowerCase().includes(q)).map((m) => m.id) : [];
+  const currentMatch = searchOpen && matches.length ? matches[Math.min(searchIdx, matches.length - 1)] : null;
+  useEffect(() => { setSearchIdx(matches.length ? matches.length - 1 : 0); }, [searchQ]);
+  useEffect(() => {
+    if (currentMatch) document.getElementById('msg-' + currentMatch)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [currentMatch]);
+  const stepMatch = (d) => {
+    if (!matches.length) return;
+    setSearchIdx((i) => (Math.min(i, matches.length - 1) + d + matches.length) % matches.length);
+  };
+  const closeSearch = () => { setSearchOpen(false); setSearchQ(''); };
   // admin (criador) pode apagar pra todos QUALQUER mensagem, mesmo de outro usuário
   const canDeleteAll = (m) => m.user_id === user.id || group.owner_id === user.id;
 
@@ -1429,6 +1562,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
             {group.description && '…'} · toque p/ detalhes
           </div>
         </div>
+        <button className="icon-btn" title="Buscar na conversa" onClick={() => setSearchOpen((v) => !v)}><AppleEmoji text="🔍" size={17} /></button>
         <button className="icon-btn" title={!canCall ? 'Você não pode iniciar chamadas (criador bloqueou)' : 'Chamada de voz'}
           onClick={() => {
             if (group.owner_id !== user.id && !canCall) { toast('📵 O criador bloqueou chamadas pra você', true); return; }
@@ -1444,6 +1578,32 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
         }}><AppleEmoji text="🚪" size={17} /></button>
       </div>
 
+      {searchOpen && (
+        <div className="search-inchat">
+          <input autoFocus placeholder="Buscar nesta conversa…" value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); stepMatch(e.shiftKey ? -1 : 1); }
+              if (e.key === 'Escape') { e.stopPropagation(); closeSearch(); }
+            }} />
+          <span className="search-count">{matches.length ? `${Math.min(searchIdx, matches.length - 1) + 1}/${matches.length}` : (q ? '0' : '')}</span>
+          <button className="icon-btn" title="Anterior" disabled={!matches.length} onClick={() => stepMatch(-1)}>↑</button>
+          <button className="icon-btn" title="Próxima" disabled={!matches.length} onClick={() => stepMatch(1)}>↓</button>
+          <button className="icon-btn" title="Fechar busca" onClick={closeSearch}>✕</button>
+        </div>
+      )}
+      {pinnedMsg && (
+        <div className="pin-banner" onClick={() => jumpTo(pinnedMsg.id)}>
+          <span className="pin-icon">📌</span>
+          <div className="pin-text">
+            <div className="pin-author">{pinnedMsg.author_name || 'Mensagem fixada'}</div>
+            <div className="pin-preview">{pinPreview(pinnedMsg)}</div>
+          </div>
+          {group.owner_id === user.id && (
+            <button className="icon-btn" title="Desafixar" onClick={(e) => { e.stopPropagation(); unpinMsg(); }}>✕</button>
+          )}
+        </div>
+      )}
       <div className="messages" ref={scrollBoxRef} onScroll={onMessagesScroll}>
         {visible.map((m, i) => {
           const prev = visible[i - 1];
@@ -1469,7 +1629,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
           return (
             <React.Fragment key={m.id}>
               {showDay && <div className="day-divider">{fmtDay(m.created_at)}</div>}
-              <div className={`msg-row ${isIncoming ? 'in' : 'out'}`}
+              <div id={`msg-${m.id}`} className={`msg-row ${isIncoming ? 'in' : 'out'}${(flashId === m.id || currentMatch === m.id) ? ' hit' : ''}`}
                 onTouchStart={onSwipeStart} onTouchMove={onSwipeMove(m)} onTouchEnd={onSwipeEnd(m)}
                 style={swipe.id === m.id ? { transform: `translateX(${swipe.dx}px)` } : undefined}>
                 {swipe.id === m.id && swipe.dx > 6 && (
@@ -1520,6 +1680,7 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                       : <AppleEmoji text={m.content} size={16} />}
                   </div>
                 )}
+                {m.content && (!m.kind || m.kind === 'text') && <LinkPreview text={m.content} />}
                 <span className="time">
                   {fmtTimeSafe(m.created_at)}
                   {m.user_id === user.id ? ' ✓✓' : ''}
@@ -1541,6 +1702,9 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
                     <button onClick={() => copyMsg(m)}>📋 Copiar</button>
                     <button onClick={() => replyTo(m)}>↩️ Responder</button>
                     <button onClick={() => forwardMsg(m)}>➡️ Encaminhar</button>
+                    {group.owner_id === user.id && (
+                      <button onClick={() => (pinnedId === m.id ? unpinMsg() : pinMsg(m))}>{pinnedId === m.id ? '📌 Desafixar' : '📌 Fixar no topo'}</button>
+                    )}
                   </div>
                 )}
                 {!!reactions[m.id] && Object.keys(reactions[m.id]).length > 0 && (
@@ -2090,6 +2254,8 @@ function GroupInfoModal({ group, user, admin, onClose, onChanged }) {
           </>
         )}
 
+        <GroupGallery groupId={group.id} />
+
         {isOwner && pendentes > 0 && (
           <div className="pending-note" style={{ marginTop: 10 }}>
             ✋ {pendentes} pedido(s) de entrada aguardando sua aprovação
@@ -2215,6 +2381,11 @@ function NotifsModal({ notifs, setNotifs, groups, onClose, onOpenGroup, onChange
 function SettingsModal({ user, profile, setProfile, onClose }) {
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('gw_theme') || 'green'; } catch (_) { return 'green'; } });
   const [mode, setMode] = useState(() => { try { return localStorage.getItem('gw_mode') || 'dark'; } catch (_) { return 'dark'; } });
+  const [wall, setWall] = useState(() => { try { return localStorage.getItem('gw_wall') || 'doodle'; } catch (_) { return 'doodle'; } });
+  const applyWall = (id) => {
+    setWall(id);
+    try { localStorage.setItem('gw_wall', id); document.body.dataset.wall = id; } catch (_) {}
+  };
   const [name, setName] = useState(profile || '');
   const [persona, setPersona] = useState('');
   const [myAvatar, setMyAvatar] = useState(user.user_metadata?.avatar_url || '');
@@ -2308,6 +2479,13 @@ function SettingsModal({ user, profile, setProfile, onClose }) {
         <div className="mode-row">
           <button className={`btn ${mode === 'dark' ? '' : 'ghost'}`} onClick={() => { setMode('dark'); apply(theme, 'dark'); }}>🌙 Escuro</button>
           <button className={`btn ${mode === 'light' ? '' : 'ghost'}`} onClick={() => { setMode('light'); apply(theme, 'light'); }}>☀️ Claro</button>
+        </div>
+        <div className="muted" style={{ marginTop: 12 }}>🖼️ Fundo da conversa</div>
+        <div className="wall-grid">
+          {WALLS.map((w) => (
+            <button key={w.id} type="button" data-w={w.id} className={`wall-swatch ${wall === w.id ? 'active' : ''}`}
+              onClick={() => applyWall(w.id)}><span>{w.label}</span></button>
+          ))}
         </div>
         <div className="muted" style={{ marginTop: 12 }}>✏️ Seu nome / nick (aparece pros outros)</div>
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={30}

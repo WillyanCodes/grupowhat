@@ -845,3 +845,79 @@ button:focus-visible, .input:focus-visible, textarea:focus-visible, .group-item:
 /* arrastar mensagem pra responder (toque, celular) */
 .msg-row { position: relative; transition: transform .22s ease; touch-action: pan-y; }
 .swipe-reply-icon { position: absolute; left: -34px; top: 50%; transform: translateY(-50%); font-size: 18px; }
+
+/* =====================================================================
+   V4 — busca na conversa, mensagem fixada, prévia de link, galeria, fundos
+   ===================================================================== */
+
+/* anel nas fotos dos grupos com mensagem nova */
+.group-item.unread .avatar, .group-item.unread .avatar-img {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4.5px var(--accent);
+}
+
+/* busca dentro da conversa */
+.search-inchat { display: flex; align-items: center; gap: 4px; padding: 8px 12px; background: var(--panel);
+  border-bottom: 1px solid var(--border); animation: fadeDown .18s ease; }
+.search-inchat input { flex: 1; min-width: 0; background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 12px; padding: 9px 12px; font-size: 14.5px; outline: none; }
+.search-inchat input:focus { border-color: var(--accent); }
+.search-count { font-size: 12.5px; color: var(--muted); min-width: 34px; text-align: center; font-weight: 600; }
+.search-inchat .icon-btn:disabled { opacity: .35; }
+@keyframes fadeDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+/* mensagem encontrada / pulada */
+.msg-row.hit .msg { box-shadow: 0 0 0 2px var(--accent), 0 0 18px color-mix(in srgb, var(--accent) 55%, transparent); animation: hitPulse 1.2s ease; }
+@keyframes hitPulse { 0% { transform: scale(1.04); } 100% { transform: scale(1); } }
+
+/* mensagem fixada no topo */
+.pin-banner { display: flex; align-items: center; gap: 10px; padding: 8px 14px; cursor: pointer; background: var(--panel);
+  border-bottom: 1px solid var(--border); border-left: 3px solid var(--accent); }
+.pin-banner:hover { background: var(--panel2); }
+.pin-icon { font-size: 16px; }
+.pin-text { flex: 1; min-width: 0; }
+.pin-author { font-size: 12px; font-weight: 700; color: var(--accent2, var(--accent)); }
+.pin-preview { font-size: 13.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* prévia de link dentro do balão */
+.link-card { display: block; margin: 6px 0 2px; border-radius: 12px; overflow: hidden; text-decoration: none; color: inherit;
+  background: rgba(0,0,0,.18); border-left: 3px solid var(--accent); max-width: 300px; }
+.light .link-card { background: rgba(0,0,0,.06); }
+.link-card img { display: block; width: 100%; max-height: 150px; object-fit: cover; }
+.link-card-text { padding: 8px 10px 9px; }
+.link-card-site { font-size: 11px; opacity: .7; text-transform: uppercase; letter-spacing: .4px; }
+.link-card-title { font-size: 13.5px; font-weight: 700; line-height: 1.25; margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.link-card-desc { font-size: 12.5px; opacity: .8; margin-top: 3px; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* galeria de fotos no info do grupo */
+.gallery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 8px; max-height: 260px; overflow-y: auto; border-radius: 12px; }
+.gallery-item { padding: 0; border: none; background: var(--panel2); aspect-ratio: 1; overflow: hidden; border-radius: 8px; cursor: pointer; }
+.gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s; }
+.gallery-item:hover img { transform: scale(1.06); }
+
+/* fundos do chat (escolhidos em Aparência) */
+body[data-wall="plain"] .messages { background-image: none; }
+body[data-wall="dots"] .messages {
+  background-image: radial-gradient(circle, rgba(128,128,128,.22) 1.4px, transparent 1.6px); background-size: 22px 22px; }
+body[data-wall="grid"] .messages {
+  background-image: linear-gradient(rgba(128,128,128,.10) 1px, transparent 1px), linear-gradient(90deg, rgba(128,128,128,.10) 1px, transparent 1px);
+  background-size: 28px 28px; }
+body[data-wall="waves"] .messages {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='40' viewBox='0 0 120 40' fill='none' stroke='%23808080' stroke-opacity='.14' stroke-width='1.6' stroke-linecap='round'><path d='M0 20c15-14 30-14 45 0s30 14 45 0 22-10 30-4'/></svg>");
+  background-size: 120px 40px; }
+body[data-wall="glow"] .messages {
+  background-image: radial-gradient(ellipse at 20% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 55%),
+                    radial-gradient(ellipse at 90% 100%, color-mix(in srgb, var(--accent2, var(--accent)) 20%, transparent), transparent 55%);
+  background-size: 100% 100%; }
+
+.wall-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.wall-swatch { height: 58px; border-radius: 14px; border: 2px solid var(--border); background-color: var(--panel2); color: var(--text);
+  font-size: 12px; font-weight: 700; display: flex; align-items: flex-end; justify-content: center; padding: 0 0 6px; cursor: pointer;
+  transition: border-color .15s, transform .15s; }
+.wall-swatch:active { transform: scale(.96); }
+.wall-swatch.active { border-color: var(--accent); }
+.wall-swatch[data-w="dots"] { background-image: radial-gradient(circle, rgba(128,128,128,.35) 1.4px, transparent 1.6px); background-size: 12px 12px; }
+.wall-swatch[data-w="grid"] { background-image: linear-gradient(rgba(128,128,128,.22) 1px, transparent 1px), linear-gradient(90deg, rgba(128,128,128,.22) 1px, transparent 1px); background-size: 14px 14px; }
+.wall-swatch[data-w="waves"] { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='20' viewBox='0 0 120 40' fill='none' stroke='%23808080' stroke-opacity='.5' stroke-width='3' stroke-linecap='round'><path d='M0 20c15-14 30-14 45 0s30 14 45 0 22-10 30-4'/></svg>"); background-size: 60px 20px; }
+.wall-swatch[data-w="glow"] { background-image: radial-gradient(ellipse at 20% 0%, color-mix(in srgb, var(--accent) 45%, transparent), transparent 60%); }
