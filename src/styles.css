@@ -841,3 +841,7 @@ button:focus-visible, .input:focus-visible, textarea:focus-visible, .group-item:
   color: var(--muted); font-size: 13.5px; font-weight: 600; border-radius: 10px; transition: color .15s, background .15s; }
 .skip-link:hover { color: var(--text); background: var(--panel2); }
 .skip-link:disabled { opacity: .5; cursor: default; }
+
+/* arrastar mensagem pra responder (toque, celular) */
+.msg-row { position: relative; transition: transform .22s ease; touch-action: pan-y; }
+.swipe-reply-icon { position: absolute; left: -34px; top: 50%; transform: translateY(-50%); font-size: 18px; }

@@ -1365,6 +1365,21 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
     setMenuMsg(null);
   };
   const cancelReply = () => setReplying(null);
+
+  // arrastar mensagem pra responder (toque, estilo WhatsApp)
+  const [swipe, setSwipe] = useState({ id: null, dx: 0 });
+  const swipeStartX = useRef(0);
+  const swipeActive = useRef(false);
+  const onSwipeStart = (e) => { swipeStartX.current = e.touches[0].clientX; swipeActive.current = true; };
+  const onSwipeMove = (m) => (e) => {
+    if (!swipeActive.current) return;
+    const dx = Math.max(0, Math.min(70, e.touches[0].clientX - swipeStartX.current));
+    if (dx > 6) setSwipe({ id: m.id, dx });
+  };
+  const onSwipeEnd = (m) => () => {
+    swipeActive.current = false;
+    setSwipe((s) => { if (s.id === m.id && s.dx > 46) replyTo(m); return { id: null, dx: 0 }; });
+  };
   const forwardMsg = async (m) => {
     const target = prompt('Encaminhar para qual grupo? Digite o nome:', '');
     if (!target) return;
@@ -1454,7 +1469,12 @@ function ChatView({ group, user, profile, onBack, onInfo, onLeft }) {
           return (
             <React.Fragment key={m.id}>
               {showDay && <div className="day-divider">{fmtDay(m.created_at)}</div>}
-              <div className={`msg-row ${isIncoming ? 'in' : 'out'}`}>
+              <div className={`msg-row ${isIncoming ? 'in' : 'out'}`}
+                onTouchStart={onSwipeStart} onTouchMove={onSwipeMove(m)} onTouchEnd={onSwipeEnd(m)}
+                style={swipe.id === m.id ? { transform: `translateX(${swipe.dx}px)` } : undefined}>
+                {swipe.id === m.id && swipe.dx > 6 && (
+                  <div className="swipe-reply-icon" style={{ opacity: Math.min(1, swipe.dx / 46) }}>↩️</div>
+                )}
                 {isIncoming && (
                   <div className="msg-row-avatar">
                     {isLastInRun && (
