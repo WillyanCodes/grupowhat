@@ -557,6 +557,40 @@ function Main({ user, setProfile: setProfileGlobal }) {
     if (active?.id && active?.last_message_at) markSeen(active.id, active.last_message_at);
   }, [active?.id, active?.last_message_at]);
 
+  // contagem real de não lidas por grupo (não só "tem ou não tem")
+  const [unreadCounts, setUnreadCounts] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const toCheck = groups.filter((g) =>
+        g.last_message_at && g.last_message_user_id !== user.id &&
+        (!lastSeen?.[g.id] || new Date(g.last_message_at) > new Date(lastSeen[g.id])) &&
+        g.id !== active?.id);
+      const entries = await Promise.all(toCheck.map(async (g) => {
+        const since = lastSeen?.[g.id] || g.joined_at;
+        const { count } = await supabase.from('messages').select('id', { count: 'exact', head: true })
+          .eq('group_id', g.id).neq('user_id', user.id).gt('created_at', since);
+        return [g.id, count || 0];
+      }));
+      if (!cancelled) {
+        setUnreadCounts((prev) => {
+          const next = { ...prev };
+          groups.forEach((g) => { if (g.id === active?.id || !toCheck.find((t) => t.id === g.id)) delete next[g.id]; });
+          entries.forEach(([gid, c]) => { next[gid] = c; });
+          return next;
+        });
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [groups, lastSeen, active?.id]);
+
+  // título da aba do navegador mostra o total de não lidas, tipo "(3) GrupoWhat"
+  useEffect(() => {
+    const total = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
+    document.title = total > 0 ? `(${total > 99 ? '99+' : total}) GrupoWhat` : 'GrupoWhat';
+  }, [unreadCounts]);
+
   const loadNotifs = async () => {
     if (!admin) return;
     const { data, error } = await supabase
@@ -621,7 +655,7 @@ function Main({ user, setProfile: setProfileGlobal }) {
     <div className="app">
       <div className={`layout ${mobileView === 'chat' ? 'mobile-chat' : 'mobile-list'}`}>
         <Sidebar
-          groups={groups} active={active} lastSeen={lastSeen}
+          groups={groups} active={active} lastSeen={lastSeen} unreadCounts={unreadCounts}
           setActive={(g) => openChat(g)}
           admin={admin} user={user} profile={profile}
           notifs={notifs} onNotifs={() => setShowNotifs(true)}
@@ -784,7 +818,7 @@ function Bubbles({ count = 24 }) {
   );
 }
 
-function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNotifs, onNew, onJoin, onSettings, lastSeen }) {
+function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNotifs, onNew, onJoin, onSettings, lastSeen, unreadCounts }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState('');
   const filtered = groups.filter((g) =>
@@ -859,7 +893,9 @@ function Sidebar({ groups, active, setActive, admin, user, profile, notifs, onNo
               </div>
               <div className="group-item-side">
                 {g.last_message_at && <span className="group-item-time">{fmtTime(g.last_message_at)}</span>}
-                {isUnread && <span className="unread-dot" />}
+                {isUnread && (
+                  <span className="unread-badge">{unreadCounts[g.id] > 0 ? (unreadCounts[g.id] > 99 ? '99+' : unreadCounts[g.id]) : ''}</span>
+                )}
               </div>
             </div>
           );
